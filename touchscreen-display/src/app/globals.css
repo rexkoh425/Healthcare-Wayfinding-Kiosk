@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 33% 98%;
+    --foreground: 210 29% 24%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 210 29% 24%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 29% 24%;
+
+    --primary: 190 55% 51%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 53% 81%;
+    --secondary-foreground: 210 29% 24%;
+
+    --muted: 210 10% 92%;
+    --muted-foreground: 210 14% 46%;
+
+    --accent: 33 87% 67%;
+    --accent-foreground: 210 29% 24%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 210 16% 82%;
+    --input: 210 16% 82%;
+    --ring: 190 55% 51%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 210 29% 12%;
+    --foreground: 0 0% 98%;
+
+    --card: 210 29% 16%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 210 29% 16%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 190 55% 47%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 29% 20%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 210 29% 20%;
+    --muted-foreground: 210 14% 70%;
+
+    --accent: 33 70% 60%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 210 29% 24%;
+    --input: 210 29% 24%;
+    --ring: 190 55% 47%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .kiosk-card {
+    @apply bg-white rounded-xl shadow-lg p-6 border border-hospital-blue/20;
+  }
+
+  .kiosk-button {
+    @apply transition-all duration-200 hover:scale-[1.02] active:scale-[0.98];
+  }
+}
+
+@layer utilities {
+  .dotted-path {
+    stroke: #3EB1C8;
+    stroke-width: 3px;
+    stroke-dasharray: 10 5;
+    fill: none;
+  }
+
+  .animated-path {
+    @apply stroke-hospital-teal stroke-[3px] fill-none animate-path-animation;
+    stroke-dasharray: 100%;
+    stroke-dashoffset: 100%;
+  }
+
+  .location-dot {
+    @apply fill-hospital-orange animate-pulse-dot;
+  }
+}
