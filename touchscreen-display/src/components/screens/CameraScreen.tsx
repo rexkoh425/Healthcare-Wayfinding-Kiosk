@@ -3,10 +3,25 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
+import useWebSocket from "@/lib/useWebSocket";
 
 const CameraScreen: React.FC = () => {
   const router = useRouter();
   const { t } = useTranslation();
+  const { send } = useWebSocket();
+
+  // when user clicks the Back Button
+  const handleBack = () => {
+    // send action to server (touchscreen -> hologram)
+    try {
+      send({ type: "action", action: "idle" });
+    } catch (err) {
+      console.warn("Failed to send WS idle action", err);
+    }
+
+    // then navigate
+    router.push("/");
+  };
 
   return (
     <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
@@ -21,7 +36,7 @@ const CameraScreen: React.FC = () => {
 
         <div className="flex justify-between">
           <Button
-            onClick={() => router.push("/")}
+            onClick={handleBack}
             variant="ghost"
             className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
           >

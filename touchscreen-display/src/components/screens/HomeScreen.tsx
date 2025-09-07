@@ -4,13 +4,23 @@ import { Button } from "@/components/ui/button";
 import { Mic, ScanText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
+import useWebSocket from "@/lib/useWebSocket";
 
 const HomeScreen: React.FC = () => {
   const router = useRouter();
   const { t } = useTranslation();
+  const { send } = useWebSocket();
 
   // when user clicks the Talk Button
   const handleTalk = () => {
+    // send action to server (touchscreen -> hologram)
+    try {
+      send({ type: "action", action: "talk" });
+    } catch (err) {
+      console.warn("Failed to send WS talk action", err);
+    }
+
+    // then navigate
     router.push("/chat");
   };
 

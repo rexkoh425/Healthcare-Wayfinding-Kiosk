@@ -1,6 +1,6 @@
 # Wayfinding Kiosk
 
-## Setup & Installation'
+## Setup & Installation
 
 Clone the repository.
 
@@ -16,10 +16,55 @@ npm install
 npm run dev
 ```
 
+Open http://localhost:3000/ for the touchscreen display.
+
+### server
+
+```
+cd server
+npm install
+npm start
+```
+
+### hologram-display
+
+Serve the static folder over HTTP (browsers often block autoplay or XHR from `file://`).
+
+```
+# from project root
+npx http-server hologram-display -p 3001
+```
+
+Open http://localhost:3001 for the hologram display.
+
 ## Tech Stack
 
 - [Next.js](https://nextjs.org/docs). Understand how [routing](https://nextjs.org/docs/app/getting-started/project-structure) works if you're creating a new screen, we're using App Router.
 - [Tailwindcss v3](https://v3.tailwindcss.com/docs/installation). Do note that we're using the older v3, the latest version is v4 so some online documentation will differ a lot.
+
+## WebSocket Server
+
+I placed some placeholder videos in `hologram-display/assets`. This is what each video represents:
+
+- `abc.mp4`: avatar is waving (when the kiosk is IDLE)
+- `fgh.mp4`: avatar is listening, standing still (when the user is talking so the avatar stands till to listen)
+- `xyz.mp4`: avatar is talking (when the avatar is replying to the user)
+
+When the chat finishes and you want hologram to revert to IDLE STATE (`abc.mp4`), call:
+
+```ts
+send({ type: "action", action: "idle" });
+```
+
+### If server is remote
+
+You can ignore this section. I added this section as a reminder if our server needs to be remote.
+
+Add `NEXT_PUBLIC_WS_URL` in `.env.local` if server is remote:
+
+```
+NEXT_PUBLIC_WS_URL=ws://your-server-host:8080
+```
 
 ## Icons
 
