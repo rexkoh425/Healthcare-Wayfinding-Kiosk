@@ -1,0 +1,28 @@
+services:
+  touchscreen-display:
+    build:
+      context: ./touchscreen-display
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./touchscreen-display:/app
+    command: npm run dev
+    depends_on:
+      - server
+
+  server:
+    build:
+      context: ./server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./server:/app
+    command: npm run start
+
+  hologram-display:
+    build:
+      context: ./hologram-display
+    ports:
+      - "3001:80"
+    volumes:
+      - ./hologram-display:/usr/share/nginx/html:ro
