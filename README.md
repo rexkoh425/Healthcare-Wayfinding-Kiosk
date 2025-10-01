@@ -37,10 +37,23 @@ npx http-server hologram-display -p 3001
 
 Open http://localhost:3001 for the hologram display.
 
+## To run with Docker Compose
+
+```
+docker-compose up --build
+```
+
+To run in detached mode
+
+```
+docker-compose up -d
+```
+
 ## Tech Stack
 
 - [Next.js](https://nextjs.org/docs). Understand how [routing](https://nextjs.org/docs/app/getting-started/project-structure) works if you're creating a new screen, we're using App Router.
 - [Tailwindcss v3](https://v3.tailwindcss.com/docs/installation). Do note that we're using the older v3, the latest version is v4 so some online documentation will differ a lot.
+- Docker
 
 ## WebSocket Server
 
