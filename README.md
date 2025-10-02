@@ -59,11 +59,11 @@ docker-compose up -d
 
 I placed some placeholder videos in `hologram-display/assets`. This is what each video represents:
 
-- `abc.mp4`: avatar is waving (when the kiosk is IDLE)
+- `wave.mp4`: avatar is waving (when the kiosk is IDLE)
 - `fgh.mp4`: avatar is listening, standing still (when the user is talking so the avatar stands till to listen)
 - `xyz.mp4`: avatar is talking (when the avatar is replying to the user)
 
-When the chat finishes and you want hologram to revert to IDLE STATE (`abc.mp4`), call:
+When the chat finishes and you want hologram to revert to IDLE STATE (`wave.mp4`), call:
 
 ```ts
 send({ type: "action", action: "idle" });

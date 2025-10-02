@@ -49,10 +49,10 @@ wss.on("connection", (ws) => {
           if (msg.action === "talk") {
             sendSafe(client, { type: "set", video: "fgh.mp4", reason: "talk" });
           } else if (msg.action === "idle") {
-            sendSafe(client, { type: "set", video: "abc.mp4", reason: "idle" });
+            sendSafe(client, { type: "set", video: "wave.mp4", reason: "idle" });
           } else {
             // custom actions support
-            sendSafe(client, { type: "set", video: msg.video || "abc.mp4", reason: msg.action });
+            sendSafe(client, { type: "set", video: msg.video || "wave.mp4", reason: msg.action });
           }
         }
       }
