@@ -29,8 +29,8 @@
     });
   }
 
-  // default already points to abc.mp4 via HTML, but ensure play
-  setVideoFile("abc.mp4");
+  // default already points to wave.mp4 via HTML, but ensure play
+  setVideoFile("wave.mp4");
 
   // WebSocket connection
   let ws;

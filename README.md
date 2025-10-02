@@ -18,6 +18,14 @@ npm run dev
 
 Open http://localhost:3000/ for the touchscreen display.
 
+OR
+
+```
+node server.js
+```
+
+Open https://localhost:3000/ for the touchscreen display.
+
 ### server
 
 ```
@@ -59,11 +67,11 @@ docker-compose up -d
 
 I placed some placeholder videos in `hologram-display/assets`. This is what each video represents:
 
-- `abc.mp4`: avatar is waving (when the kiosk is IDLE)
+- `wave.mp4`: avatar is waving (when the kiosk is IDLE)
 - `fgh.mp4`: avatar is listening, standing still (when the user is talking so the avatar stands till to listen)
 - `xyz.mp4`: avatar is talking (when the avatar is replying to the user)
 
-When the chat finishes and you want hologram to revert to IDLE STATE (`abc.mp4`), call:
+When the chat finishes and you want hologram to revert to IDLE STATE (`wave.mp4`), call:
 
 ```ts
 send({ type: "action", action: "idle" });
@@ -77,6 +85,29 @@ Add `NEXT_PUBLIC_WS_URL` in `.env.local` if server is remote:
 
 ```
 NEXT_PUBLIC_WS_URL=ws://your-server-host:8080
+```
+
+## How to set up HTTPS for touchscreen display
+
+1. Install OpenSSL
+2. Generate a self-signed certificate
+
+```
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365
+```
+
+3. Enter a PEM pass phrase (e.g. password)
+4. Fill in the fields
+5. Remove the passphrase
+
+```
+openssl rsa -in key.pem -out key_no_passphrase.pem
+```
+
+6. Run the application
+
+```
+node server.js
 ```
 
 ## Icons
