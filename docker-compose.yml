@@ -6,7 +6,7 @@ services:
       - "3000:3000"
     volumes:
       - ./touchscreen-display:/app
-    command: npm run dev
+    command: node server.js
     depends_on:
       - server
 
