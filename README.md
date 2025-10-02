@@ -18,6 +18,14 @@ npm run dev
 
 Open http://localhost:3000/ for the touchscreen display.
 
+OR
+
+```
+node server.js
+```
+
+Open https://localhost:3000/ for the touchscreen display.
+
 ### server
 
 ```
