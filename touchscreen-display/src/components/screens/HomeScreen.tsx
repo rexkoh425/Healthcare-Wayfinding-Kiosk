@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Info, Settings } from "lucide-react";
@@ -28,7 +28,7 @@ function resolveBackendBase(): string {
   return `${protocol}://${window.location.hostname}:8000`;
 }
 
-const SignageScreen: React.FC = () => {
+const HomeScreen: React.FC = () => {
   const router = useRouter();
   const { t } = useTranslation();
   const { send } = useWebSocket();
@@ -38,7 +38,7 @@ const SignageScreen: React.FC = () => {
   const [hourlyStats, setHourlyStats] = useState<Stat[]>([]);
   const [weeklyStats, setWeeklyStats] = useState<Stat[]>([]);
 
-  // keep kiosk idle while on the signage screen
+  // keep kiosk idle while on the home screen
   useEffect(() => {
     send({ type: "action", action: "idle" });
   }, [send]);
@@ -136,7 +136,7 @@ const SignageScreen: React.FC = () => {
 
   const handleTalk = () => {
     send({ type: "action", action: "talk" });
-    router.push("/LLM");
+    router.push("/chat");
   };
 
   return (
@@ -144,15 +144,15 @@ const SignageScreen: React.FC = () => {
       <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-hospital-blue-gray mb-2">
-            Welcome to Scan and Go
+            {t("home.title")}
           </h2>
           <div className="flex flex-col md:flex-row items-center justify-center md:space-x-2 space-y-3 md:space-y-0 mb-6">
             <p className="text-hospital-blue-gray/70 text-xl">
-              {t("signage.descriptionOne")}
+              {t("home.descriptionOne")}
             </p>
             <Info size={32} className="text-hospital-teal" />
             <p className="text-hospital-blue-gray/70 text-xl">
-              {t("signage.descriptionTwo")}
+              {t("home.descriptionTwo")}
             </p>
           </div>
 
@@ -168,7 +168,7 @@ const SignageScreen: React.FC = () => {
             size="lg"
             className="bg-hospital-teal hover:bg-hospital-teal/90 text-white py-6 text-lg kiosk-button"
           >
-            {scanMode === "camera" ? t("signage.scanButton") : t("signage.nfc")}
+            {scanMode === "camera" ? t("home.scanButton") : t("home.nfcButton")}
           </Button>
 
           <Button
@@ -176,7 +176,7 @@ const SignageScreen: React.FC = () => {
             size="lg"
             className="bg-hospital-blue-gray hover:bg-hospital-blue-gray/90 text-white py-6 text-lg kiosk-button"
           >
-            {t("signage.talkButton")}
+            {t("home.talkButton")}
           </Button>
         </div>
       </Card>
@@ -192,21 +192,21 @@ const SignageScreen: React.FC = () => {
 
       {showSettings && (
         <div className="text-hospital-blue-gray/70 fixed bottom-16 right-4 w-48 bg-white border rounded-lg shadow-lg p-4 z-50">
-          <h4 className="font-medium mb-2">Scan Method</h4>
+          <h4 className="font-medium mb-2">{t("home.scanMethod")}</h4>
           <div className="flex flex-col space-y-2">
             <Toggle
               pressed={scanMode === "camera"}
               onPressedChange={(pressed) => pressed && setScanMode("camera")}
               className="justify-between"
             >
-              <span>Camera</span>
+              <span>{t("home.cameraOption")}</span>
             </Toggle>
             <Toggle
               pressed={scanMode === "nfc"}
               onPressedChange={(pressed) => pressed && setScanMode("nfc")}
               className="justify-between"
             >
-              <span>NFC</span>
+              <span>{t("home.nfcOption")}</span>
             </Toggle>
           </div>
         </div>
@@ -215,4 +215,4 @@ const SignageScreen: React.FC = () => {
   );
 };
 
-export default SignageScreen;
+export default HomeScreen;

@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
-import SignageScreen from "@/components/screens/SignageScreen";
+import HomeScreen from "@/components/screens/HomeScreen";
 
-const SignagePage: React.FC = () => {
-  return <SignageScreen />;
+const HomePage: React.FC = () => {
+  return <HomeScreen />;
 };
 
-export default SignagePage;
+export default HomePage;

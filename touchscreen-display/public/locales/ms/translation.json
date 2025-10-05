@@ -1,13 +1,17 @@
-{
+﻿{
   "common": {
     "back": "Kembali"
   },
-  "signage": {
+  "home": {
+    "title": "Selamat datang ke Scan and Go",
     "descriptionOne": "Ketik pada",
     "descriptionTwo": "untuk arahan terperinci",
     "scanButton": "Imbas Pas Masuk anda untuk arahan",
-    "nfc": "Ketik Kad Matrik Anda untuk arah",
-    "talkButton": "Pergi ke Talk Client"
+    "nfcButton": "Ketik Kad Matrik Anda untuk arah",
+    "talkButton": "Pergi ke Chat",
+    "scanMethod": "Kaedah Imbasan",
+    "cameraOption": "Kamera",
+    "nfcOption": "NFC"
   },
   "camera": {
     "description": "Sila imbas pas naik kapal terbang anda untuk memulakan navigasi",

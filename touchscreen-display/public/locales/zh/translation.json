@@ -1,13 +1,17 @@
-{
+﻿{
   "common": {
     "back": "Back"
   },
-  "signage": {
+  "home": {
+    "title": "Welcome to Scan and Go",
     "descriptionOne": "Tap on",
     "descriptionTwo": "for detailed directions",
     "scanButton": "Scan your Boarding Pass for directions",
-    "nfc": "Tap your Matric Card for directions",
-    "talkButton": "Go to Talk Client"
+    "nfcButton": "Tap your Matric Card for directions",
+    "talkButton": "Go to Chat",
+    "scanMethod": "Scan Method",
+    "cameraOption": "Camera",
+    "nfcOption": "NFC"
   },
   "camera": {
     "description": "Please scan your boarding pass to begin navigation",

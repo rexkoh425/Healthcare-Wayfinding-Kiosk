@@ -1,6 +1,5 @@
-import TalkClient from "@/components/screens/TalkClient";
+﻿import ChatScreen from "@/components/screens/ChatScreen";
 
-export default function TalkClientPage() {
-  return <TalkClient />;
+export default function ChatPage() {
+  return <ChatScreen />;
 }
-

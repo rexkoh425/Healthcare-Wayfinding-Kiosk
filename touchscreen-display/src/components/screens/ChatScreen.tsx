@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import useWebSocket from "@/lib/useWebSocket";
 
@@ -21,8 +22,9 @@ function resolveChatBase(): string {
   return `${protocol}://${window.location.hostname}:8001`;
 }
 
-const TalkClient: React.FC = () => {
+const ChatScreen: React.FC = () => {
   const router = useRouter();
+  const { t } = useTranslation();
   const { send } = useWebSocket();
 
   const [status, setStatus] = useState<Status>("idle");
@@ -169,7 +171,7 @@ const TalkClient: React.FC = () => {
             }
           }
         } catch (requestError: any) {
-          console.error("Talk client error", requestError);
+          console.error("Chat screen error", requestError);
           setStatus("idle");
           setError(requestError?.message ?? "Failed to contact the chatbot service");
         }
@@ -234,10 +236,10 @@ const TalkClient: React.FC = () => {
         )}
       </div>
       <Button variant="secondary" onClick={handleBack} className="bg-white/10 text-white hover:bg-white/20">
-        Back to Signage
+        {t("common.back")}
       </Button>
     </main>
   );
 };
 
-export default TalkClient;
+export default ChatScreen;
