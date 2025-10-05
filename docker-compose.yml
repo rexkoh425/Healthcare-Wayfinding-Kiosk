@@ -27,8 +27,13 @@ services:
       context: ./server
     ports:
       - "8080:8080"
+      - "8000:8000"
     volumes:
       - ./server:/app
+      - /home/rex/CDE3301/code:/host
+      - /etc/ssl/eic:/certs:ro
+    env_file:
+      - ./server/backend/.env
     command: npm run start
 
   hologram-display:
@@ -94,10 +99,10 @@ services:
     image: caddy:2-alpine
     container_name: eic-caddy
     depends_on:
-      - backend
+      - server
       - ocr
       - chatbot-backend
-      - frontend
+      - touchscreen-display
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - /etc/ssl/eic:/certs:ro
@@ -106,31 +111,6 @@ services:
       - "8000:8000"
       - "8001:8001"
       - "9000:9000"
-    restart: unless-stopped
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: eic-backend
-    env_file:
-      - ./backend/.env
-    environment:
-      # Point backend to OCR service over the compose network
-      OCR_URL: "https://ocr:9000/ocr"
-      # If your app reads this for CORS, include the frontend origin:
-      # CORS_ORIGINS: '["https://192.168.1.12:3000"]'
-    volumes:
-      - ./backend:/app
-      - /home/rex/CDE3301/code:/host
-      - /etc/ssl/eic:/certs:ro
-    command: >
-      uvicorn app.main:app
-      --host 0.0.0.0
-      --port 8000
-      --reload
-    expose:
-      - "8000"
     restart: unless-stopped
 
 volumes:

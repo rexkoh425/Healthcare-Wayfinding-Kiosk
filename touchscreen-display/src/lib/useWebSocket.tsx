@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
-type Sendable = Record<string, any>;
+type Sendable = Record<string, unknown>;
 
 export default function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
-  const url =
-    (process.env.NEXT_PUBLIC_WS_URL as string) ?? "ws://localhost:8080";
+  const url = (process.env.NEXT_PUBLIC_WS_URL as string) ?? "ws://localhost:8080";
 
   useEffect(() => {
     const ws = new WebSocket(url);
@@ -18,32 +17,33 @@ export default function useWebSocket() {
       ws.send(JSON.stringify({ type: "register", role: "touchscreen" }));
     };
 
-    ws.onmessage = (ev) => {
+    ws.onmessage = (event) => {
       try {
-        const d = JSON.parse(ev.data);
-        console.log("WS message:", d);
+        const data = JSON.parse(event.data);
+        console.log("WS message:", data);
       } catch (err) {
-        console.warn("WS non-json:", ev.data);
+        console.warn("WS non-json:", event.data);
       }
     };
 
     ws.onclose = () => {
       console.warn("WS closed - you may want to reconnect");
-      // TODO: Simple no-reconnect logic here; can be extended to auto-reconnect
     };
 
-    ws.onerror = (e) => {
-      console.warn("WS error", e);
+    ws.onerror = (error) => {
+      console.warn("WS error", error);
     };
 
     return () => {
       try {
         ws.close();
-      } catch (_) {}
+      } catch (error) {
+        console.warn("WS close error", error);
+      }
     };
   }, [url]);
 
-  function send(obj: Sendable) {
+  const send = useCallback((obj: Sendable) => {
     const ws = wsRef.current;
     if (!ws) {
       console.warn("WS not available");
@@ -54,7 +54,7 @@ export default function useWebSocket() {
       return;
     }
     ws.send(JSON.stringify(obj));
-  }
+  }, []);
 
   return { send };
 }

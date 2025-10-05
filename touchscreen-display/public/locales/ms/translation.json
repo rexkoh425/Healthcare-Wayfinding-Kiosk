@@ -1,5 +1,37 @@
 {
   "common": {
     "back": "Kembali"
+  },
+  "signage": {
+    "descriptionOne": "Ketik pada",
+    "descriptionTwo": "untuk arahan terperinci",
+    "scanButton": "Imbas Pas Masuk anda untuk arahan",
+    "nfc": "Ketik Kad Matrik Anda untuk arah",
+    "talkButton": "Pergi ke Talk Client"
+  },
+  "camera": {
+    "description": "Sila imbas pas naik kapal terbang anda untuk memulakan navigasi",
+    "position": "Posisikan pas naik kapal terbang anda di kawasan pemindai",
+    "scanDocument": "Imbas Pas Naik Kapal Terbang"
+  },
+  "nfc": {
+    "tapCard": "Imbas Kad Matrik Anda",
+    "scanning": "Memindai...",
+    "success": "Imbasan Berjaya!",
+    "error": "Ralat Imbasan",
+    "waitingDescription": "Letakkan Kad Matrik anda pada pembaca untuk mendapatkan destinasi anda",
+    "scanningDescription": "Sila jangan keluarkan kad anda",
+    "successDescription": "Kami telah mendapatkan destinasi anda. Sedang menuju ke langkah seterusnya...",
+    "errorDescription": "Kami tidak dapat membaca kad anda. Sila cuba lagi.",
+    "simulateTap": "Simulasi",
+    "tryAgain": "Cuba Lagi"
+  },
+  "video": {
+    "description": "Ikuti panduan video langkah demi langkah ini untuk menuju ke destinasi anda",
+    "tipsHeader": "Petua Navigasi",
+    "tipsPointOne": "Klik pada mana-mana gambar kecil bab untuk melompat ke bahagian itu",
+    "tipsPointTwo": "Gunakan kawalan video untuk jeda, melaraskan kelantangan, atau pergi ke mod skrin penuh",
+    "tipsPointThree": "Bar kemajuan menunjukkan kedudukan semasa anda dalam video",
+    "tipsPointFour": "Penanda bab pada garis masa membantu anda navigasi dengan cepat"
   }
 }

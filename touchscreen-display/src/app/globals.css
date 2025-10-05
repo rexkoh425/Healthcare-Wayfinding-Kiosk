@@ -90,7 +90,7 @@
   .kiosk-card {
     @apply bg-white rounded-xl shadow-lg p-6 border border-hospital-blue/20;
   }
-
+  
   .kiosk-button {
     @apply transition-all duration-200 hover:scale-[1.02] active:scale-[0.98];
   }
@@ -103,13 +103,13 @@
     stroke-dasharray: 10 5;
     fill: none;
   }
-
+  
   .animated-path {
     @apply stroke-hospital-teal stroke-[3px] fill-none animate-path-animation;
     stroke-dasharray: 100%;
     stroke-dashoffset: 100%;
   }
-
+  
   .location-dot {
     @apply fill-hospital-orange animate-pulse-dot;
   }
