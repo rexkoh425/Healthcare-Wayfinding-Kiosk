@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-import os, time, json, traceback, glob
+import os, time, json, traceback, glob, asyncio
 from threading import Lock
 from pathlib import Path
 from datetime import datetime
@@ -293,79 +293,81 @@ async def run_ocr():
     return JSONResponse(content=result)
 
 
+def _render_stream_frame():
+    """Capture, annotate, and encode a single frame for the MJPEG stream."""
+    global _last_boxes, _frame_idx, _last_ocr_time
+
+    with cam_lock:
+        frame = picam.capture_array()
+        if frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+
+    if ROTATE_STREAM_180:
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
+
+    if ROTATE_STREAM_90:
+        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+    if yolo_model is not None and (_frame_idx % STREAM_DET_INTERVAL == 0):
+        try:
+            _last_boxes = _yolo_detect_boxes(frame, STREAM_IMG_SIZE, STREAM_CONF)
+            log.error("Ran inference")
+        except Exception as e:
+            print(f"[stream] YOLO predict error: {e}")
+            _last_boxes = []
+
+    _frame_idx += 1
+
+    best_conf = 0.0
+    best_det = None
+    if _last_boxes:
+        best_det = max(_last_boxes, key=lambda b: b[4])
+        best_conf = best_det[4]
+        frame = _draw_boxes(frame, _last_boxes, (0, 255, 0))
+
+    cv2.putText(
+        frame,
+        f"frm:{_frame_idx} det:{len(_last_boxes)} conf:{best_conf*100:.1f}%",
+        (10, 25),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2,
+    )
+
+    now = time.time()
+    if best_det and best_conf >= OCR_MIN_CONF and (now - _last_ocr_time) >= OCR_COOLDOWN_SEC:
+        try:
+            frame_copy = frame.copy()
+            cls_name = best_det[5]
+            _ = _run_ocr_on_detection(frame_copy, best_det, cls_name)
+            _last_ocr_time = now
+            cv2.putText(frame, "OCR OK", (10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        except Exception as e:
+            cv2.putText(frame, f"OCR ERR: {str(e)[:28]}", (10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+    _, jpeg = cv2.imencode(".jpg", frame)
+    return (
+        b"--FRAME\r\n"
+        b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
+    )
+
+
 @router.get("/stream.mjpg")
-def stream():
-    global _last_boxes, _frame_idx
-
-    def generate():
+async def stream(request: Request):
+    async def generate():
         log.error("running stream")
-        global _last_boxes, _frame_idx
-        i = 0
-        while True:
-            t0 = time.time()
-            with cam_lock:
-                frame = picam.capture_array()
-                if frame.shape[2] == 4:
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)  # drop alpha
-                
-
-
-            if ROTATE_STREAM_180:
-                frame = cv2.rotate(frame, cv2.ROTATE_180)
-            
-            if ROTATE_STREAM_90:
-                frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-
-            # Run YOLO every N frames
-            if yolo_model is not None and (_frame_idx % STREAM_DET_INTERVAL == 0):
-                try:
-                    _last_boxes = _yolo_detect_boxes(frame, STREAM_IMG_SIZE, STREAM_CONF)
-                    log.error("Ran inference")
-                except Exception as e:
-                    print(f"[stream] YOLO predict error: {e}")
-                    _last_boxes = []
-
-            _frame_idx += 1
-
-            best_conf = 0.0
-            best_det = None
-            if _last_boxes:
-                # each item: (x1, y1, x2, y2, conf, cls_name)
-                best_det = max(_last_boxes, key=lambda b: b[4])
-                best_conf = best_det[4]
-                frame = _draw_boxes(frame, _last_boxes, (0, 255, 0))
-
-            # Overlay text
-            cv2.putText(
-                frame,
-                f"frm:{_frame_idx} det:{len(_last_boxes)} conf:{best_conf*100:.1f}%",
-                (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2,
-            )
-
-            # Trigger OCR when threshold met, with cooldown
-            now = time.time()
-            global _last_ocr_time
-            if best_det and best_conf >= OCR_MIN_CONF and (now - _last_ocr_time) >= OCR_COOLDOWN_SEC:
-                try:
-                    frame_copy = frame.copy()              # do not block encoder/draw
-                    cls_name = best_det[5]                 # tuple stores class name at index 5
-                    _ = _run_ocr_on_detection(frame_copy, best_det, cls_name)
-                    _last_ocr_time = now
-                    cv2.putText(frame, "OCR OK", (10, 50),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                except Exception as e:
-                    cv2.putText(frame, f"OCR ERR: {str(e)[:28]}", (10, 50),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-
-
-            # Encode and yield
-            #down_720p = cv2.resize(frame, (540,960))
-            _, jpeg = cv2.imencode(".jpg", frame)
-            yield (
-                b"--FRAME\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
-            )
+        try:
+            while True:
+                if await request.is_disconnected():
+                    log.info("client disconnected; stopping MJPEG stream")
+                    break
+                chunk = await asyncio.to_thread(_render_stream_frame)
+                yield chunk
+        except asyncio.CancelledError:
+            log.info("stream generator cancelled")
+            raise
+        finally:
+            log.info("stream generator closed")
 
     return StreamingResponse(
         generate(),

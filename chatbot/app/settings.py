@@ -1,15 +1,30 @@
 from __future__ import annotations
 
 import json
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _safe_json_loads(value: Union[str, bytes, bytearray]):
+    """Attempt JSON decode but fall back to the original value on failure."""
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode()
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return ""
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return value
+
+
 class Settings(BaseSettings):
     # Read .env at project root; ignore unexpected env vars
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", json_loads=_safe_json_loads)
 
     # ---------------- CORS ----------------
     CORS_ORIGINS: List[str] = Field(default_factory=list)

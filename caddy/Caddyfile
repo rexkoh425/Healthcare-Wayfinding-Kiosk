@@ -7,6 +7,11 @@
   reverse_proxy touchscreen-display:3000
 }
 
+:8080 {
+  tls /certs/cert.pem /certs/key.pem
+  reverse_proxy server:8080
+}
+
 :8000 {
   tls /certs/cert.pem /certs/key.pem
   reverse_proxy server:8000

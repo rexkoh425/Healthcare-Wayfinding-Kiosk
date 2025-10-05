@@ -29,17 +29,6 @@ RUN python -m pip install --upgrade pip && \
 
 COPY . /app
 
-# ---- ENV: align with your code’s variable names ----
-# Your code expects WHISPER_MODEL_NAME / WHISPER_DEVICE / WHISPER_PRECISION
-# and uses PIPER_BIN + PIPER_VOICE_PATH.
-ENV CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:3000" \
-    WHISPER_MODEL_NAME=small \
-    WHISPER_DEVICE=cpu \
-    WHISPER_PRECISION=int8 \
-    PIPER_BIN=/usr/local/bin/piper \
-    PIPER_VOICE_PATH=/voices/en_US-amy-medium.onnx \
-    LLM_PROVIDER=gemini \
-    GEMINI_MODEL=gemini-1.5-flash-001
 
 EXPOSE 8001
 CMD ["uvicorn", "app.dialog:app", "--host", "0.0.0.0", "--port", "8001"]

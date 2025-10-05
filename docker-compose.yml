@@ -9,8 +9,8 @@ services:
       NEXT_PUBLIC_CHATBOT_API_BASE: "https://192.168.1.12:8001"
       NEXT_PUBLIC_OCR_API_BASE: "https://192.168.1.12:9000"
       NEXT_PUBLIC_BACKEND_API_BASE: "https://192.168.1.12:8000"
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     volumes:
       - ./frontend/eic-kiosk:/app
       - eic_node_modules:/app/node_modules
@@ -25,9 +25,9 @@ services:
   server:
     build:
       context: ./server
-    ports:
-      - "8080:8080"
-      - "8000:8000"
+    expose:
+      - "8080"
+      - "8000"
     volumes:
       - ./server:/app
       - /home/rex/CDE3301/code:/host

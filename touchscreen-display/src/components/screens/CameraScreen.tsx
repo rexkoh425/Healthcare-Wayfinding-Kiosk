@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Search, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -29,6 +29,7 @@ const CameraScreen: React.FC = () => {
   const [apiBase, setApiBase] = useState<string>("");
   const [streamUrl, setStreamUrl] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const streamImgRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {
     const base = resolveOcrBase();
@@ -36,6 +37,13 @@ const CameraScreen: React.FC = () => {
     if (base) {
       setStreamUrl(`${base}/stream.mjpg`);
     }
+    return () => {
+      const imgEl = streamImgRef.current;
+      if (imgEl) {
+        imgEl.src = "";
+        imgEl.removeAttribute("src");
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -105,6 +113,12 @@ const CameraScreen: React.FC = () => {
   };
 
   const handleBack = () => {
+    const imgEl = streamImgRef.current;
+    if (imgEl) {
+      imgEl.src = "";
+      imgEl.removeAttribute("src");
+    }
+    setStreamUrl("");
     send({ type: "action", action: "idle" });
     router.push("/");
   };
@@ -124,7 +138,12 @@ const CameraScreen: React.FC = () => {
         {streamUrl && !loading && (
           <div className="mb-8 flex justify-center">
             <div className="border rounded-lg overflow-hidden shadow flex justify-center items-center max-h-[75vh] w-full max-w-2xl bg-black">
-              <img src={streamUrl} alt="Live camera stream" className="max-h-[75vh] w-auto object-contain" />
+              <img
+                ref={streamImgRef}
+                src={streamUrl}
+                alt="Live camera stream"
+                className="max-h-[75vh] w-auto object-contain"
+              />
             </div>
           </div>
         )}
