@@ -2,13 +2,25 @@ services:
   touchscreen-display:
     build:
       context: ./touchscreen-display
+      dockerfile: Dockerfile
+    container_name: touchscreen-display
+    environment:
+      # Browser will call these HTTP endpoints directly (same host/IP)
+      NEXT_PUBLIC_CHATBOT_API_BASE: "https://192.168.1.12:8001"
+      NEXT_PUBLIC_OCR_API_BASE: "https://192.168.1.12:9000"
+      NEXT_PUBLIC_BACKEND_API_BASE: "https://192.168.1.12:8000"
     ports:
       - "3000:3000"
     volumes:
+      - ./frontend/eic-kiosk:/app
+      - eic_node_modules:/app/node_modules
+      - /etc/ssl/eic:/certs:ro
       - ./touchscreen-display:/app
-    command: node server.js
+    command: >
+      sh -lc "npx next dev --hostname 0.0.0.0 --port 3000"
     depends_on:
       - server
+    restart: unless-stopped
 
   server:
     build:
@@ -26,3 +38,104 @@ services:
       - "3001:80"
     volumes:
       - ./hologram-display:/usr/share/nginx/html:ro
+
+  ocr:
+    build:
+      context: ./ocr-service
+      dockerfile: Dockerfile
+    container_name: eic-ocr
+    privileged: true
+    devices:
+      - /dev/vchiq:/dev/vchiq
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+      - /dev/media0:/dev/media0
+      - /dev/vcsm:/dev/vcsm
+    volumes:
+      - ./ocr-service:/app
+      - /run/udev:/run/udev:ro
+      - /home/rex/ocr_latest:/data/ocr_latest
+      - /etc/ssl/eic:/certs:ro
+    environment:
+      PICAMERA2_TEST_ENV: 1
+      PYTHONUNBUFFERED: 1
+      YOLO_CONFIG_DIR: /app/.ultralytics
+    command: >
+      python3 -m uvicorn service:app
+      --host 0.0.0.0
+      --port 9000
+      --log-level debug
+    expose:
+      - "9000"
+    restart: unless-stopped
+
+  chatbot-backend:
+    build:
+      context: ./chatbot
+      dockerfile: Dockerfile
+    container_name: chatbot-backend
+    env_file:
+      - ./chatbot/.env
+    environment:
+      PIPER_VOICE: en_US-amy-low
+      PIPER_VOICE_PATH: /voices/en_US-amy-low.onnx
+    volumes:
+      - /etc/ssl/eic:/certs:ro
+      - ./chatbot/app/voices:/voices:ro
+    command: >
+      uvicorn app.dialog:app
+      --host 0.0.0.0
+      --port 8001
+    expose:
+      - "8001"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: eic-caddy
+    depends_on:
+      - backend
+      - ocr
+      - chatbot-backend
+      - frontend
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /etc/ssl/eic:/certs:ro
+    ports:
+      - "3000:3000"
+      - "8000:8000"
+      - "8001:8001"
+      - "9000:9000"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: eic-backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # Point backend to OCR service over the compose network
+      OCR_URL: "https://ocr:9000/ocr"
+      # If your app reads this for CORS, include the frontend origin:
+      # CORS_ORIGINS: '["https://192.168.1.12:3000"]'
+    volumes:
+      - ./backend:/app
+      - /home/rex/CDE3301/code:/host
+      - /etc/ssl/eic:/certs:ro
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+volumes:
+  eic_node_modules:
+
+networks:
+  default:
+    name: eic-kiosk-net

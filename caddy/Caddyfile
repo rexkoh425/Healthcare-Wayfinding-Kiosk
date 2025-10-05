@@ -1,0 +1,23 @@
+{
+  auto_https off
+}
+
+:3000 {
+  tls /certs/cert.pem /certs/key.pem
+  reverse_proxy frontend:3000
+}
+
+:8000 {
+  tls /certs/cert.pem /certs/key.pem
+  reverse_proxy backend:8000
+}
+
+:8001 {
+  tls /certs/cert.pem /certs/key.pem
+  reverse_proxy chatbot-backend:8001
+}
+
+:9000 {
+  tls /certs/cert.pem /certs/key.pem
+  reverse_proxy ocr:9000
+}
