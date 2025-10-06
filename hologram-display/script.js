@@ -1,14 +1,5 @@
 (() => {
-  function resolveWsUrl() {
-    if (window.HOLOGRAM_WS_URL) {
-      return window.HOLOGRAM_WS_URL;
-    }
-    const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const host = window.location.hostname || "localhost";
-    return `${proto}://${host}:8080`;
-  }
-
-  const WS_URL = resolveWsUrl();
+  const WS_URL = window.HOLOGRAM_WS_URL || "ws://localhost:8080";
   const video = document.getElementById("player");
 
   function setVideoFile(filename) {

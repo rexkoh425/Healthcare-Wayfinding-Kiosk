@@ -26,26 +26,23 @@ node server.js
 
 Open https://localhost:3000/ for the touchscreen display.
 
-### server (WebSocket + FastAPI)
+### server (WebSocket)
 
 ```
 cd server
 npm install
-python3 -m pip install -r backend/requirements.txt  # once per machine
-# optional: create a venv first
-BACKEND_RELOAD=1 npm start
-```
-
-By default `npm start` now launches both the WebSocket bridge on port 8080 and the FastAPI backend on port 8000.
-Set `BACKEND_RELOAD=0` (or `NODE_ENV=production`) to disable the FastAPI auto-reload watcher.
+npm run start
 
 ### hologram-display
 
 Serve the static folder over HTTP (browsers often block autoplay or XHR from `file://`).
 
 ```
+
 # from project root
+
 npx http-server hologram-display -p 3001
+
 ```
 
 Open http://localhost:3001 for the hologram display.
@@ -53,14 +50,18 @@ Open http://localhost:3001 for the hologram display.
 ## To run with Docker Compose
 
 ```
+
 docker-compose up --build
+
 ```
 
 To run in detached mode
 
 ```
+
 docker-compose up -d
-```
+
+````
 
 ## Tech Stack
 
@@ -80,7 +81,7 @@ When the chat finishes and you want hologram to revert to IDLE STATE (`wave.mp4`
 
 ```ts
 send({ type: "action", action: "idle" });
-```
+````
 
 ### If server is remote
 
