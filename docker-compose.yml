@@ -30,10 +30,8 @@ services:
       - "8080"
     volumes:
       - ./server:/app
-      - /home/rex/CDE3301/code:/host
-      - /etc/ssl/eic:/certs:ro
       - server_node_modules:/app/node_modules
-    command: npm run start:ws
+    command: npm run start
 
   alexandra-backend:
     build:
