@@ -1,6 +1,0 @@
-{
-  "Clinic A|Clinic B": ["Clinic A", "Clinic D", "Clinic F", "Clinic B"],
-  "Clinic D|Clinic B": ["Clinic D", "Clinic A", "Clinic F", "Clinic B"],
-  "Clinic A|Cocoon Clinic": ["Clinic A", "Elevator1", "Elevator2", "Cocoon Clinic"]
-}
-

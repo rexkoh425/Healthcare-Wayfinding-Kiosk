@@ -3,39 +3,12 @@
     "back": "Back"
   },
   "home": {
-    "title": "Welcome to Scan and Go",
-    "descriptionOne": "Tap on",
-    "descriptionTwo": "for detailed directions",
-    "scanButton": "Scan your Boarding Pass for directions",
-    "nfcButton": "Tap your Matric Card for directions",
-    "talkButton": "Go to Chat",
-    "scanMethod": "Scan Method",
-    "cameraOption": "Camera",
-    "nfcOption": "NFC"
+    "title": "Hello, I'm your wayfinding assistant!",
+    "caption": "Guiding you through every step.",
+    "talkButton": "Press here to tell me where you want to go",
+    "scanButton": "Scan your appointment details on your registration slip/NUHS mobile app"
   },
   "camera": {
-    "description": "Please scan your boarding pass to begin navigation",
-    "position": "Position your boarding pass in the scanner area",
-    "scanDocument": "Scan Boarding Pass"
-  },
-  "nfc": {
-    "tapCard": "Scan Your Matric Card",
-    "scanning": "Scanning...",
-    "success": "Destination: ",
-    "error": "Please try again.",
-    "waitingDescription": "Place your Matric Card on the reader to retrieve your destination",
-    "scanningDescription": "Please do not remove your card",
-    "successDescription": "",
-    "errorDescription": "Scan Error.",
-    "simulateTap": "Simulate",
-    "tryAgain": "Try Again"
-  },
-  "video": {
-    "description": "Follow this step-by-step video guide to navigate to your destination",
-    "tipsHeader": "Navigation Tips",
-    "tipsPointOne": "Click on any chapter thumbnail to jump to that section",
-    "tipsPointTwo": "Use the video controls to pause, adjust volume, or go fullscreen",
-    "tipsPointThree": "The progress bar shows your current position in the video",
-    "tipsPointFour": "Chapter markers on the timeline help you navigate quickly"
+    "instruction": "Position your registration slip/phone within the frame"
   }
 }
