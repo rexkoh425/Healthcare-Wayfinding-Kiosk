@@ -1,12 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 type Sendable = Record<string, unknown>;
 
 export default function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
-  const url = (process.env.NEXT_PUBLIC_WS_URL as string) ?? "ws://localhost:8080";
+  const url = useMemo(() => {
+    const explicit = process.env.NEXT_PUBLIC_WS_URL as string | undefined;
+    if (explicit) {
+      return explicit;
+    }
+    if (typeof window !== "undefined") {
+      const proto = window.location.protocol === "https:" ? "wss" : "ws";
+      return `${proto}://${window.location.hostname}:8080`;
+    }
+    return "ws://localhost:8080";
+  }, []);
 
   useEffect(() => {
     const ws = new WebSocket(url);

@@ -14,7 +14,7 @@
 
 :8000 {
   tls /certs/cert.pem /certs/key.pem
-  reverse_proxy server:8000
+  reverse_proxy alexandra-backend:8000
 }
 
 :8001 {
