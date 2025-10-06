@@ -60,6 +60,39 @@ class TalkVoiceOut(BaseModel):
     audio_wav_b64: Optional[str] = None
 
 
+# Accepted ASR language codes (mirrors faster-whisper)
+_ASR_LANG_CODES = {
+    "af", "am", "ar", "as", "az", "ba", "be", "bg", "bn", "bo", "br", "bs",
+    "ca", "cs", "cy", "da", "de", "el", "en", "es", "et", "eu", "fa", "fi",
+    "fo", "fr", "gl", "gu", "ha", "haw", "he", "hi", "hr", "ht", "hu", "hy",
+    "id", "is", "it", "ja", "jw", "ka", "kk", "km", "kn", "ko", "la", "lb",
+    "ln", "lo", "lt", "lv", "mg", "mi", "mk", "ml", "mn", "mr", "ms", "mt",
+    "my", "ne", "nl", "nn", "no", "oc", "pa", "pl", "ps", "pt", "ro", "ru",
+    "sa", "sd", "si", "sk", "sl", "sn", "so", "sq", "sr", "su", "sv", "sw",
+    "ta", "te", "tg", "th", "tk", "tl", "tr", "tt", "uk", "ur", "uz", "vi",
+    "yi", "yo", "zh", "yue",
+}
+
+
+def _normalise_asr_language(lang: Optional[str]) -> Optional[str]:
+    """Return a language code accepted by faster-whisper or None for auto-detect."""
+
+    if not lang:
+        return None
+    stripped = lang.strip()
+    if not stripped:
+        return None
+    lowered = stripped.lower().replace("_", "-")
+    if lowered in _ASR_LANG_CODES:
+        return lowered
+    # Accept locale-style strings like en-us by taking primary subtag
+    primary = lowered.split("-", 1)[0]
+    if primary in _ASR_LANG_CODES:
+        return primary
+    logger.warning("Unsupported ASR language '%s'; falling back to auto", lang)
+    return None
+
+
 # ---------- Gemini client ----------
 
 def _get_gemini_client() -> "genai.Client":
@@ -235,6 +268,8 @@ async def talk_voice(
 ):
     history_items = _parse_history_form(history)
 
+    language_code = _normalise_asr_language(language)
+
     logger.info(
         "talk_voice request received session_id=%s file=%s return_mode=%s history_present=%s",
         session_id,
@@ -255,7 +290,7 @@ async def talk_voice(
 
         if audio_bytes:
             logger.debug("Running ASR bytes=%s suffix=%s", len(audio_bytes), suffix)
-            transcript = await transcribe_audio_bytes(audio_bytes, suffix=suffix, language=language)
+            transcript = await transcribe_audio_bytes(audio_bytes, suffix=suffix, language=language_code)
             user_text = transcript.text or user_text
             logger.info(
                 "ASR complete transcript=%s language=%s duration=%s",

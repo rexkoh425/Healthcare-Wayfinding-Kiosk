@@ -103,6 +103,16 @@ class Settings(BaseSettings):
         legacy = data.get("WHISPER_COMPUTE")
         return legacy or "int8"
 
+    @field_validator("WHISPER_LANGUAGE", mode="before")
+    @classmethod
+    def _clean_language(cls, v):
+        if v in (None, ""):
+            return None
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
+
     @field_validator("GEMINI_MODEL", mode="before")
     @classmethod
     def _trim_gemini_model(cls, v):

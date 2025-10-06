@@ -59,24 +59,64 @@ yolo_model = YOLO(YOLO_WEIGHTS, task="detect")
 # FastAPI router + Camera
 # ──────────────────────────────────────────────────────────────────────────────
 router = APIRouter()
-cam_lock = Lock()
+_camera_init_lock = Lock()
+_capture_lock = Lock()
 
 os.environ['PICAMERA2_USE_V4L2'] = '1'
 
-picam = Picamera2()
+picam: Picamera2 | None = None
+vid_config = None
+pic_config = None
+_camera_started = False
 
-vid_config = picam.create_video_configuration(
-    main={"size": (1536,864)},
-    controls={"FrameRate": 20}
-)
-pic_config = picam.create_still_configuration(
-    main={"size": (4608, 2592)},
-    controls={"AfMode": 1}
-)
-picam.configure(vid_config)
-picam.start()
 
-log.error("Configured Camera")
+def _ensure_camera_started() -> Picamera2:
+    """Initialise and start the camera lazily, retrying once on failure."""
+    global picam, vid_config, pic_config, _camera_started
+
+    with _camera_init_lock:
+        if picam is None:
+            picam = Picamera2()
+            vid_config = picam.create_video_configuration(
+                main={"size": (1536, 864)},
+                controls={"FrameRate": 20},
+            )
+            pic_config = picam.create_still_configuration(
+                main={"size": (4608, 2592)},
+                controls={"AfMode": 1},
+            )
+
+        if not _camera_started:
+            try:
+                picam.configure(vid_config)
+                picam.start()
+                _camera_started = True
+                log.info("Camera started")
+            except RuntimeError as exc:
+                log.error("Primary camera start failed: %s", exc)
+                try:
+                    picam.close()
+                except Exception:
+                    pass
+                picam = Picamera2()
+                vid_config = picam.create_video_configuration(
+                    main={"size": (1536, 864)},
+                    controls={"FrameRate": 20},
+                )
+                pic_config = picam.create_still_configuration(
+                    main={"size": (4608, 2592)},
+                    controls={"AfMode": 1},
+                )
+                try:
+                    picam.configure(vid_config)
+                    picam.start()
+                    _camera_started = True
+                    log.info("Camera restarted after recovery")
+                except RuntimeError as exc2:
+                    log.error("Camera restart failed: %s", exc2)
+                    raise HTTPException(status_code=500, detail="Camera unavailable") from exc2
+
+    return picam
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Geometry helpers for deskew
@@ -297,8 +337,10 @@ def _render_stream_frame():
     """Capture, annotate, and encode a single frame for the MJPEG stream."""
     global _last_boxes, _frame_idx, _last_ocr_time
 
-    with cam_lock:
-        frame = picam.capture_array()
+    camera = _ensure_camera_started()
+
+    with _capture_lock:
+        frame = camera.capture_array()
         if frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 

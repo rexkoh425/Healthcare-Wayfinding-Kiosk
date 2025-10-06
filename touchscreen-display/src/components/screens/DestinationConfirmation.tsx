@@ -23,7 +23,7 @@ type Segment = {
 const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
   locations,
   onRestart,
-  targetPath = "/2D_map",
+  targetPath = "/wristband",
 }) => {
   const router = useRouter();
   const params = useSearchParams();
@@ -31,7 +31,9 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
   const [submitting, setSubmitting] = useState(false);
 
   const [from, to] = useMemo(() => {
-    return [locations?.[0] ?? "", locations?.[1] ?? ""];
+    const first = locations?.[0] ?? "";
+    const second = locations?.[1] ?? "";
+    return [first, second];
   }, [locations]);
 
   const lookupPath = (index: any, a: string, b: string): string[] | null => {
@@ -56,47 +58,57 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
   };
 
   const handleConfirm = async () => {
-    if (!from || !to) {
-      alert("Need at least two destinations to compute a route.");
-      return;
-    }
-
     setSubmitting(true);
     try {
-      const [clinicIndex, pathIndex] = await Promise.all([
-        fetch(CLINIC_INDEX_URL).then((response) => response.json()),
-        fetch(PATHS_INDEX_URL).then((response) => response.json()),
-      ]);
-
-      const labels = lookupPath(pathIndex, from, to);
-      if (!labels || labels.length < 2 || labels.length % 2 !== 0) {
-        alert("No valid path sequence found for the selected pair.");
-        return;
-      }
-
-      const segments: Segment[] = [];
-      for (let i = 0; i < labels.length; i += 2) {
-        const aLabel = labels[i];
-        const bLabel = labels[i + 1];
-        const aFile = clinicIndex[aLabel];
-        const bFile = clinicIndex[bLabel];
-        if (!aFile || !bFile) {
-          alert(`Missing map file for ${!aFile ? aLabel : bLabel}.`);
-          return;
-        }
-        if (aFile !== bFile) {
-          console.warn(`Path pair (${aLabel}, ${bLabel}) uses different files: ${aFile} vs ${bFile}.`);
-        }
-        segments.push({ file: aFile, labels: [aLabel, bLabel] });
-      }
-
-      send({ type: "action", action: "route", from, to });
-
       const nextParams = new URLSearchParams(params.toString());
       nextParams.delete("route");
       nextParams.delete("dest");
       nextParams.delete("locations");
-      nextParams.set("route", JSON.stringify(segments));
+
+      const destHighlights = locations.slice(0, 3).filter((loc) => loc && loc.trim().length > 0);
+      destHighlights.forEach((loc) => nextParams.append("dest", loc));
+
+      if (from && to) {
+        let routeAdded = false;
+        const [clinicIndex, pathIndex] = await Promise.all([
+          fetch(CLINIC_INDEX_URL).then((response) => response.json()),
+          fetch(PATHS_INDEX_URL).then((response) => response.json()),
+        ]);
+
+        const labels = lookupPath(pathIndex, from, to);
+        if (!labels || labels.length < 2 || labels.length % 2 !== 0) {
+          console.warn("No valid path sequence found for the selected pair.");
+        } else {
+          const segments: Segment[] = [];
+          for (let i = 0; i < labels.length; i += 2) {
+            const aLabel = labels[i];
+            const bLabel = labels[i + 1];
+            const aFile = clinicIndex[aLabel];
+            const bFile = clinicIndex[bLabel];
+            if (!aFile || !bFile) {
+              console.warn(`Missing map file for ${!aFile ? aLabel : bLabel}.`);
+              continue;
+            }
+            segments.push({ file: aFile, labels: [aLabel, bLabel] });
+          }
+          if (segments.length > 0) {
+            nextParams.set("route", JSON.stringify(segments));
+            routeAdded = true;
+          }
+        }
+
+        nextParams.set("from", from);
+        nextParams.set("to", to);
+
+        send({ type: "action", action: "route", from, to });
+
+        if (!routeAdded) {
+          alert("Unable to compute the detailed route. We'll still highlight your destination on the map.");
+        }
+      } else {
+        nextParams.delete("from");
+        nextParams.delete("to");
+      }
 
       const query = nextParams.toString();
       router.push(query ? `${targetPath}?${query}` : targetPath);
@@ -128,7 +140,7 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
         <div className="flex justify-center gap-4">
           <Button
             onClick={handleConfirm}
-            disabled={locations.length < 2 || submitting}
+            disabled={locations.length === 0 || submitting}
             className="bg-hospital-teal text-white"
           >
             {submitting ? "Preparing..." : "Confirm"}
