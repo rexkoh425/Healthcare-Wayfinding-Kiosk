@@ -26,3 +26,14 @@ services:
       - "3001:80"
     volumes:
       - ./hologram-display:/usr/share/nginx/html:ro
+
+  rfid:
+    build:
+      context: ./rfid
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./rfid:/app
+    command: python rfid.py
+    stdin_open: true   # equivalent to -i
+    tty: true          # equivalent to -t
