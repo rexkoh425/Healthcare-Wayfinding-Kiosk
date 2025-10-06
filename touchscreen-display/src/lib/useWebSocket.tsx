@@ -1,22 +1,14 @@
+
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 
-type Sendable = Record<string, unknown>;
+type Sendable = Record<string, any>;
 
 export default function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
-  const url = useMemo(() => {
-    const explicit = process.env.NEXT_PUBLIC_WS_URL as string | undefined;
-    if (explicit) {
-      return explicit;
-    }
-    if (typeof window !== "undefined") {
-      const proto = window.location.protocol === "https:" ? "wss" : "ws";
-      return `${proto}://${window.location.hostname}:8080`;
-    }
-    return "ws://localhost:8080";
-  }, []);
+  const url =
+    (process.env.NEXT_PUBLIC_WS_URL as string) ?? "ws://localhost:8080";
 
   useEffect(() => {
     const ws = new WebSocket(url);
@@ -27,33 +19,32 @@ export default function useWebSocket() {
       ws.send(JSON.stringify({ type: "register", role: "touchscreen" }));
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = (ev) => {
       try {
-        const data = JSON.parse(event.data);
-        console.log("WS message:", data);
+        const d = JSON.parse(ev.data);
+        console.log("WS message:", d);
       } catch (err) {
-        console.warn("WS non-json:", event.data);
+        console.warn("WS non-json:", ev.data);
       }
     };
 
     ws.onclose = () => {
       console.warn("WS closed - you may want to reconnect");
+      // TODO: Simple no-reconnect logic here; can be extended to auto-reconnect
     };
 
-    ws.onerror = (error) => {
-      console.warn("WS error", error);
+    ws.onerror = (e) => {
+      console.warn("WS error", e);
     };
 
     return () => {
       try {
         ws.close();
-      } catch (error) {
-        console.warn("WS close error", error);
-      }
+      } catch (_) {}
     };
   }, [url]);
 
-  const send = useCallback((obj: Sendable) => {
+  function send(obj: Sendable) {
     const ws = wsRef.current;
     if (!ws) {
       console.warn("WS not available");
@@ -64,7 +55,7 @@ export default function useWebSocket() {
       return;
     }
     ws.send(JSON.stringify(obj));
-  }, []);
+  }
 
   return { send };
 }
