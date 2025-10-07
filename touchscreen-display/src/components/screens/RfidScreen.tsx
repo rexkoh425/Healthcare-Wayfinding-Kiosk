@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import useWebSocket from "@/lib/useWebSocket";
 import { MedicalIcon, MedicalIconType } from "@/components/ui/MedicalIcons";
+import Image from "next/image";
 
 
 const RfidScreen: React.FC = () => {
@@ -19,12 +20,13 @@ const RfidScreen: React.FC = () => {
     useEffect(() => {
         async function handleTags() {
             try {
-                // 1️⃣ GET request to ESP32
+                // 1️⃣ GET request
+                console.log("request rfid reader")
                 const espRes = await fetch("http://localhost:5000/"); // ESP32 endpoint
                 if (!espRes.ok) throw new Error(`HTTP error from rfid! status: ${espRes.status}`);
 
                 const tagData = await espRes.json(); // assuming ESP32 returns JSON
-                console.log("Received from ESP32:", tagData);
+                console.log("Received from RFID Reader:", tagData);
 
                 // 2️⃣ POST request to user/backend
                 const postRes = await fetch("http://localhost:8000/users/", {
@@ -38,12 +40,11 @@ const RfidScreen: React.FC = () => {
                     })
                 });
 
-                if (!postRes.ok) {
+                if (postRes.ok) {
                     const postResult = await postRes.json();
                     console.log("POST result:", postResult);
                     setDispensing(false);
                 } else if (postRes.status == 409){
-                    //ignore 
                     setDispensing(false);
                 } else {
                     throw new Error(`HTTP error from users api! status: ${postRes.status}`);
@@ -116,7 +117,16 @@ const RfidScreen: React.FC = () => {
         <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
             <div>
                 <p className="text-3xl font-bold text-hospital-blue-gray">Please Collect your Sticker </p>
-                <p className="text-3xl font-bold text-hospital-blue-gray">And stick it vertically on your clothes</p>
+                <p className="text-3xl font-bold text-hospital-blue-gray">And stick it vertically on your pants</p>
+            </div>
+            <div className="flex items-center justify-center w-80 p-4 rounded-xl mx-auto">
+                <Image
+                    src="/rfid/wearGuide.jpg" // put your jpg inside /public folder
+                    alt="RFID Wear Guide"
+                    width={300}
+                    height={200}
+                    className="rounded-lg object-contain"
+                />
             </div>
 
             <div className="flex justify-between">

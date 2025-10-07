@@ -25,7 +25,7 @@ def start_rfid_listener():
 @app.route("/", methods=["GET"])
 @cross_origin()
 def activate():
-    epc = start_rfid_listener()
+    epc = start_rfid_listener().lower()
     return jsonify({"epc": epc})
     
 
