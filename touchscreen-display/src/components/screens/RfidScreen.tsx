@@ -68,6 +68,17 @@ const RfidScreen: React.FC = () => {
     router.push("/");
   };
 
+  const handleCollected = () => {
+    // send action to server (touchscreen -> hologram)
+    try {
+      send({ type: "action", action: "idle" });
+    } catch (err) {
+      console.warn("Failed to send WS idle action", err);
+    }
+    // then navigate
+    router.push("/");
+  };
+
   if (dispensing) {
     return (
         <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
@@ -105,17 +116,24 @@ const RfidScreen: React.FC = () => {
         <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
             <div>
                 <p className="text-3xl font-bold text-hospital-blue-gray">Please Collect your Sticker </p>
-                  <p className="text-3xl font-bold text-hospital-blue-gray">And stick it in an upright position</p>
+                <p className="text-3xl font-bold text-hospital-blue-gray">And stick it vertically on your clothes</p>
             </div>
 
             <div className="flex justify-between">
-            <Button
-                onClick={handleBack}
-                variant="ghost"
-                className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
-            >
-                {t("common.back")}
-            </Button>
+                <Button
+                    onClick={handleBack}
+                    variant="ghost"
+                    className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
+                >
+                    {t("common.back")}
+                </Button>
+                <Button
+                    onClick={handleCollected}
+                    variant="ghost"
+                    className=" bg-hospital-teal hover:bg-hospital-teal/90 text-white kiosk-button"
+                >
+                    Collected
+                </Button>
             </div>
         </Card>
         </div>

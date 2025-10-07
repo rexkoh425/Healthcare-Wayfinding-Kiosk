@@ -58,7 +58,6 @@ services:
       - "3443:443"
     volumes:
       - ./hologram-display:/usr/share/nginx/html:ro
-<<<<<<< HEAD
 
   rfid:
     build:
@@ -67,11 +66,10 @@ services:
       - "5000:5000"
     volumes:
       - ./rfid:/app
+      - /etc/ssl/eic:/certs:ro
     command: python rfid.py
     stdin_open: true   # equivalent to -i
     tty: true          # equivalent to -t
-=======
-      - /etc/ssl/eic:/certs:ro
 
   ocr:
     build:
@@ -151,4 +149,3 @@ volumes:
 networks:
   default:
     name: eic-kiosk-net
->>>>>>> origin/main
