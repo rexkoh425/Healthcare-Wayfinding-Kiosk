@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useState } from "react";
-import { ScanLine, Globe } from "lucide-react";
+import { Route, Globe } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
 const languages = [
   { id: "en", name: "English", local: "English" },
-  { id: "zh", name: "Mandarin", local: "Chinese" },
+  { id: "zh", name: "Mandarin", local: "中文" },
   { id: "ms", name: "Malay", local: "Melayu" },
-  { id: "ta", name: "Tamil", local: "Tamil" },
+  { id: "ta", name: "Tamil", local: "தமிழ்" },
 ];
 
 interface KioskLayoutProps {
@@ -20,7 +21,10 @@ const KioskLayout: React.FC<KioskLayoutProps> = ({
   children,
   showHeader = true,
 }) => {
-  const { i18n } = useTranslation();
+  const router = useRouter();
+  const { t, i18n } = useTranslation();
+
+  // Local state for currently‐selected language; default = 'en'
   const [selectedLang, setSelectedLang] = useState<string>("en");
 
   const handleLanguageClick = (langId: string) => {
@@ -32,12 +36,14 @@ const KioskLayout: React.FC<KioskLayoutProps> = ({
     <div className="min-h-screen flex flex-col bg-hospital-gray">
       {showHeader && (
         <header className="bg-white shadow-sm border-b border-hospital-blue/10 p-4">
-          <div className="container mx-auto flex items-center">
-            <ScanLine className="h-8 w-8 text-hospital-teal mr-3" />
-            <h1 className="text-2xl font-bold text-hospital-blue-gray">
-              Scan and Go
-            </h1>
-          </div>
+          <button onClick={() => router.push("/")}>
+            <div className="container mx-auto flex items-center">
+              <Route className="h-8 w-8 text-hospital-teal mr-3" />
+              <h1 className="text-2xl font-bold text-hospital-blue-gray">
+                Find My Way
+              </h1>
+            </div>
+          </button>
 
           <div className="absolute top-4 right-8 flex items-center space-x-4">
             <Globe size={20} className="text-hospital-teal" />
