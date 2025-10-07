@@ -55,8 +55,10 @@ services:
       context: ./hologram-display
     ports:
       - "3001:80"
+      - "3443:443"
     volumes:
       - ./hologram-display:/usr/share/nginx/html:ro
+      - /etc/ssl/eic:/certs:ro
 
   ocr:
     build:
