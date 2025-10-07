@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Mic, ScanText } from "lucide-react";
@@ -11,13 +11,22 @@ const HomeScreen: React.FC = () => {
   const { t } = useTranslation();
   const { send } = useWebSocket();
 
-  const handleScan = () => {
-    router.push("/camera");
+  // when user clicks the Talk Button
+  const handleTalk = () => {
+    // send action to server (touchscreen -> hologram)
+    try {
+      send({ type: "action", action: "talk" });
+    } catch (err) {
+      console.warn("Failed to send WS talk action", err);
+    }
+
+    // then navigate
+    router.push("/chat");
   };
 
-  const handleTalk = () => {
-    send({ type: "action", action: "talk" });
-    router.push("/chat");
+  // when user clicks the Scan Button
+  const handleScan = () => {
+    router.push("/camera");
   };
 
   return (

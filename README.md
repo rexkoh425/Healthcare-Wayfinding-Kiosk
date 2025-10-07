@@ -26,23 +26,21 @@ node server.js
 
 Open https://localhost:3000/ for the touchscreen display.
 
-### server (WebSocket)
+### server
 
 ```
 cd server
 npm install
-npm run start
+npm start
+```
 
 ### hologram-display
 
 Serve the static folder over HTTP (browsers often block autoplay or XHR from `file://`).
 
 ```
-
 # from project root
-
 npx http-server hologram-display -p 3001
-
 ```
 
 Open http://localhost:3001 for the hologram display.
@@ -50,18 +48,14 @@ Open http://localhost:3001 for the hologram display.
 ## To run with Docker Compose
 
 ```
-
 docker-compose up --build
-
 ```
 
 To run in detached mode
 
 ```
-
 docker-compose up -d
-
-````
+```
 
 ## Tech Stack
 
@@ -81,7 +75,7 @@ When the chat finishes and you want hologram to revert to IDLE STATE (`wave.mp4`
 
 ```ts
 send({ type: "action", action: "idle" });
-````
+```
 
 ### If server is remote
 
