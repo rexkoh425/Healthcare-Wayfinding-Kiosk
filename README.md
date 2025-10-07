@@ -26,13 +26,18 @@ node server.js
 
 Open https://localhost:3000/ for the touchscreen display.
 
-### server
+### server (WebSocket + FastAPI)
 
 ```
 cd server
 npm install
-npm start
+python3 -m pip install -r backend/requirements.txt  # once per machine
+# optional: create a venv first
+BACKEND_RELOAD=1 npm start
 ```
+
+By default `npm start` now launches both the WebSocket bridge on port 8080 and the FastAPI backend on port 8000.
+Set `BACKEND_RELOAD=0` (or `NODE_ENV=production`) to disable the FastAPI auto-reload watcher.
 
 ### hologram-display
 

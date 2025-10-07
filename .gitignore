@@ -1,0 +1,23 @@
+# Node / Next
+node_modules/
+.next/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Project secrets
+chatbot/.env
+secrets/
+*.pem
+*.key
+*.p12
+
+# OS / editors
+.DS_Store
+*.swp
+.idea/
+.vscode/
