@@ -71,19 +71,18 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
 
     // Dedupe while preserving order
     const seen = new Set<string>();
-    return collected.filter((item) => {
+    const deduped = collected.filter((item) => {
       if (seen.has(item)) {
         return false;
       }
       seen.add(item);
       return true;
     });
+    return deduped.slice(0, 3);
   }, [locations, paramsString]);
 
-  const finalDestination = destinations.length > 0 ? destinations[destinations.length - 1] : "";
-
-  const handleConfirm = () => {
-    if (!finalDestination) {
+  const handleSelectDestination = (selected: string) => {
+    if (!selected) {
       alert("No destination selected. Please restart the scan.");
       return;
     }
@@ -94,7 +93,7 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
         nextParams.delete(key);
       });
 
-      nextParams.append("dest", finalDestination);
+      nextParams.append("dest", selected);
 
       const query = nextParams.toString();
       router.push(query ? `${targetPath}?${query}` : targetPath);
@@ -114,28 +113,21 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
         {destinations.length === 0 ? (
           <p>No destinations detected.</p>
         ) : (
-          <ul className="mb-8 space-y-2">
+          <div className="mb-8 flex flex-col gap-4">
             {destinations.map((location) => (
-              <li
+              <Button
                 key={location}
-                className={`text-lg ${
-                  location === finalDestination ? "font-semibold text-hospital-teal" : ""
-                }`}
+                onClick={() => handleSelectDestination(location)}
+                disabled={submitting}
+                className="bg-hospital-teal text-white text-lg py-6"
               >
                 {location}
-              </li>
+              </Button>
             ))}
-          </ul>
+          </div>
         )}
 
-        <div className="flex justify-center gap-4">
-          <Button
-            onClick={handleConfirm}
-            disabled={destinations.length === 0 || submitting}
-            className="bg-hospital-teal text-white"
-          >
-            {submitting ? "Preparing..." : "Confirm"}
-          </Button>
+        <div className="flex justify-center">
           <Button variant="ghost" onClick={onRestart} disabled={submitting}>
             Restart
           </Button>
