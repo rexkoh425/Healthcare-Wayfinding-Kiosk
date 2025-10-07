@@ -14,7 +14,7 @@ interface DestinationConfirmationProps {
 const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
   locations = [],
   onRestart,
-  targetPath = "/wristband",
+  targetPath = "/rfid",
 }) => {
   const router = useRouter();
   const params = useSearchParams();

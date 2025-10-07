@@ -1,16 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import useWebSocket from "@/lib/useWebSocket";
+import { MedicalIcon, MedicalIconType } from "@/components/ui/MedicalIcons";
 
 
 const RfidScreen: React.FC = () => {
-  const router = useRouter();
-  const { t } = useTranslation();
-  const { send } = useWebSocket();
-  const [dispensing, setDispensing] = useState(true);
+    const router = useRouter();
+    const { t } = useTranslation();
+    const { send } = useWebSocket();
+    const searchParams = useSearchParams();
+    const [dispensing, setDispensing] = useState(true);
+
+    const dest = searchParams.get("dest");
 
     useEffect(() => {
         async function handleTags() {
@@ -30,7 +34,7 @@ const RfidScreen: React.FC = () => {
                     },
                     body: JSON.stringify({
                         rfidTagId: tagData.epc,
-                        destination: "Diagnostic Imaging 2",
+                        destination: dest,
                     })
                 });
 
@@ -70,6 +74,15 @@ const RfidScreen: React.FC = () => {
             <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
                 <div>
                     <p className="text-3xl font-bold text-hospital-blue-gray">Dispensing Sticker...</p>
+                    <p className="text-3xl font-bold text-hospital-blue-gray">{dest}</p>
+                    {/* Container for Medical Icon and Unit Number */}
+                    <div className="flex-shrink-0 mx-6 flex flex-col items-center">
+                        {/* Medical Icon
+                        <div className="bg-iconBg rounded-full p-4">
+                        <MedicalIcon
+                            type={dest.iconType}
+                        /> */}
+                    </div>
                 </div>
 
                 <div className="flex justify-between">
