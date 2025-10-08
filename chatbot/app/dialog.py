@@ -139,6 +139,9 @@ When intent="route", determine the top THREE most likely destinations the user w
 - Diagnostic Imaging 2
 - X-ray
 - Eye Center
+- Ward 2
+- Orthopaedic Centre
+- ICU 1
 
 If the user refers to a clinic letter in any form (e.g. "clinic e", "klinick ee"), normalise it to the correct "Clinic <Letter>" entry. Remove duplicates and return the top three distinct destinations (or fewer if you are unsure). If you truly cannot decide, set ask_clarification=true and craft a clarifying response.
 

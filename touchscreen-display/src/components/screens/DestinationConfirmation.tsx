@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface DestinationConfirmationProps {
   locations?: string[];
-  onRestart: () => void;
+  onRestart?: () => void;
   targetPath?: string;
 }
 
@@ -19,6 +19,7 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
   const router = useRouter();
   const params = useSearchParams();
   const [submitting, setSubmitting] = useState(false);
+  const [selectedDestination, setSelectedDestination] = useState("");
 
   const paramsString = params.toString();
 
@@ -81,28 +82,60 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
     return deduped.slice(0, 3);
   }, [locations, paramsString]);
 
+<<<<<<< Updated upstream
   const handleSelectDestination = (selected: string) => {
     if (!selected) {
       alert("No destination selected. Please restart the scan.");
+=======
+  useEffect(() => {
+    setSelectedDestination((prev) => {
+      if (destinations.length === 0) {
+        return "";
+      }
+      if (prev && destinations.includes(prev)) {
+        return prev;
+      }
+      return destinations[destinations.length - 1];
+    });
+  }, [destinations]);
+
+  const handleDestinationSelect = (destination: string) => {
+    if (!destination || submitting) {
+>>>>>>> Stashed changes
       return;
     }
+
+    setSelectedDestination(destination);
     setSubmitting(true);
+
     try {
       const nextParams = new URLSearchParams(paramsString);
       ["route", "dest", "destination", "locations", "from", "to"].forEach((key) => {
         nextParams.delete(key);
       });
 
+<<<<<<< Updated upstream
       nextParams.append("dest", selected);
 
+=======
+      nextParams.append("dest", destination);
+>>>>>>> Stashed changes
       const query = nextParams.toString();
       router.push(query ? `${targetPath}?${query}` : targetPath);
     } catch (error) {
       console.error("Failed to prepare route", error);
       alert("Failed to prepare route. Please try again.");
-    } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleRestart = () => {
+    if (submitting) {
+      return;
+    }
+    onRestart?.();
+    router.replace("/");
+    router.refresh();
   };
 
   return (
@@ -113,6 +146,7 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
         {destinations.length === 0 ? (
           <p>No destinations detected.</p>
         ) : (
+<<<<<<< Updated upstream
           <div className="mb-8 flex flex-col gap-4">
             {destinations.map((location) => (
               <Button
@@ -129,6 +163,33 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
 
         <div className="flex justify-center">
           <Button variant="ghost" onClick={onRestart} disabled={submitting}>
+=======
+          <ul className="mb-8 space-y-2">
+            {destinations.map((location) => {
+              const isSelected = location === selectedDestination;
+              return (
+                <li key={location}>
+                  <button
+                    type="button"
+                    onClick={() => handleDestinationSelect(location)}
+                    disabled={submitting}
+                    className={`w-full rounded-md border px-4 py-3 text-lg transition ${
+                      isSelected
+                        ? "border-hospital-teal bg-hospital-teal/10 text-hospital-teal"
+                        : "border-gray-300 hover:border-hospital-teal hover:bg-hospital-teal/5"
+                    }`}
+                  >
+                    {location}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div className="flex justify-center">
+          <Button variant="ghost" onClick={handleRestart} disabled={submitting}>
+>>>>>>> Stashed changes
             Restart
           </Button>
         </div>

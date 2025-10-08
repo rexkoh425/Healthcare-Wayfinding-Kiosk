@@ -66,7 +66,8 @@ const RfidScreen: React.FC = () => {
     }
 
     // then navigate
-    router.push("/");
+    router.replace("/");
+    router.refresh();
   };
 
   const handleCollected = () => {
@@ -77,7 +78,8 @@ const RfidScreen: React.FC = () => {
       console.warn("Failed to send WS idle action", err);
     }
     // then navigate
-    router.push("/");
+    router.replace("/");
+    router.refresh();
   };
 
   if (dispensing) {
