@@ -58,6 +58,14 @@ services:
       - "3443:443"
     volumes:
       - ./hologram-display:/usr/share/nginx/html:ro
+
+  rfid:
+    build:
+      context: ./rfid
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./rfid:/app
       - /etc/ssl/eic:/certs:ro
 
   ocr:
