@@ -289,6 +289,7 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
     result = {
         "capture_id": ts,
         "yolo": {"class": cls_name, "conf": float(det[4]), "box": [x1,y1,x2,y2]},
+        "locations": clinics_in_order,
         "clinics": clinics_in_order,
         "fields": fields,
         "outputs": {
@@ -303,9 +304,9 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
     # publish latest result for frontend polling
     global _latest_result, _latest_result_ts
     _latest_result = {
-        "locations": clinics_in_order,   # important: frontend expects locations
+        "locations": result.get("locations", []),   # important: frontend expects locations
         "yolo": result["yolo"],
-        "capture_id": ts,
+        "capture_id": result["capture_id"],
     }
     _latest_result_ts = time.time()
 
@@ -320,15 +321,28 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
 @router.post("/ocr")
 async def run_ocr():
     result = {
-        "capture_id": 1,
-        "yolo": {"class": 1, "conf": 1, "box": [1,3]},
-        "clinics": [1],
-        "fields": [1],
+        "capture_id": "demo-capture",
+        "locations": ["Ward 2", "Orthopaedic Centre", "Clinic J"],
+        "yolo": {"class": "slip_1", "conf": 0.99, "box": [12, 34, 200, 320]},
+        "clinics": ["Ward 2", "Orthopaedic Centre", "Clinic J"],
+        "fields": {
+            "clinic_1": "Ward 2",
+            "clinic_2": "Orthopaedic Centre",
+            "clinic_3": "Clinic J",
+        },
         "outputs": {
-            "overlay": 1,
-            "crops_dir": 1
-        }
+            "overlay": "/data/ocr_latest/frames/demo-capture.template_overlay.jpg",
+            "crops_dir": "/data/ocr_latest/frames"
+        },
     }
+
+    global _latest_result, _latest_result_ts
+    _latest_result = {
+        "locations": result["locations"],
+        "yolo": result["yolo"],
+        "capture_id": result["capture_id"],
+    }
+    _latest_result_ts = time.time()
 
     return JSONResponse(content=result)
 

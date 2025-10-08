@@ -22,7 +22,7 @@ const RfidScreen: React.FC = () => {
             try {
                 // 1️⃣ GET request
                 console.log("request rfid reader")
-                const espRes = await fetch("http://localhost:5000/"); // ESP32 endpoint
+                const espRes = await fetch("https://192.168.99.54:5000"); // ESP32 endpoint
                 if (!espRes.ok) throw new Error(`HTTP error from rfid! status: ${espRes.status}`);
 
                 const tagData = await espRes.json(); // assuming ESP32 returns JSON
