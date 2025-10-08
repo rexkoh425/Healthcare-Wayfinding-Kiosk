@@ -47,6 +47,7 @@ _last_ocr_time = 0.0
 
 _latest_result = None
 _latest_result_ts = 0.0
+CAMERA_ENABLED = os.environ.get("CAMERA_ENABLED", "0") == "1"
 
 
 log = logging.getLogger(__name__)
@@ -73,6 +74,9 @@ _camera_started = False
 def _ensure_camera_started() -> Picamera2:
     """Initialise and start the camera lazily, retrying once on failure."""
     global picam, vid_config, pic_config, _camera_started
+
+    if not CAMERA_ENABLED:
+        raise HTTPException(status_code=503, detail="Camera disabled")
 
     with _camera_init_lock:
         if picam is None:
@@ -351,6 +355,9 @@ def _render_stream_frame():
     """Capture, annotate, and encode a single frame for the MJPEG stream."""
     global _last_boxes, _frame_idx, _last_ocr_time
 
+    if not CAMERA_ENABLED:
+        raise RuntimeError("Camera disabled")
+
     camera = _ensure_camera_started()
 
     with _capture_lock:
@@ -410,6 +417,9 @@ def _render_stream_frame():
 
 @router.get("/stream.mjpg")
 async def stream(request: Request):
+    if not CAMERA_ENABLED:
+        raise HTTPException(status_code=503, detail="Camera livestream disabled")
+
     async def generate():
         log.error("running stream")
         try:
