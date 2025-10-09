@@ -1,358 +1,453 @@
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
-import subprocess
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+import os, time, json, asyncio
 from threading import Lock
-import json
-from picamera2 import Picamera2
-from libcamera import controls
-from .ocr_v3 import extract
-import cv2, glob, os
-import numpy as np
-from PIL import Image
-import pytesseract
-import time
-import re, os
-import traceback
-from .helpers import extract_clinic_locations, match
-from datetime import datetime
-from reportlab.platypus import SimpleDocTemplate, Image as RLImage, Spacer
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import inch
-import shutil
 from pathlib import Path
+from datetime import datetime
 
+import cv2
+import numpy as np
+import pytesseract
+import logging
 
-cam_lock = Lock()
-seg_offset = 40
+from ultralytics import YOLO
 
-if os.environ.get('PICAMERA2_TEST_ENV') == '1':
-    os.environ['PICAMERA2_USE_V4L2'] = '1'
+# ──────────────────────────────────────────────────────────────────────────────
+# Config
+# ──────────────────────────────────────────────────────────────────────────────
+YOLO_WEIGHTS = os.environ.get("YOLO_WEIGHTS", "model_weights/best.pt")
+CLASS_TO_VARIANT = {"slip_1": 1, "slip_2": 2, "slip_3": 3}
 
+TEMPLATE_DIR = Path(os.environ.get("TEMPLATE_DIR", "templates"))
+OUT_DIR = Path(os.environ.get("OUT_DIR", "/data/ocr_latest/frames"))
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Livestream detection throttling
+STREAM_DET_INTERVAL = int(os.environ.get("STREAM_DET_INTERVAL", "5"))   # detect every N frames
+STREAM_IMG_SIZE     = int(os.environ.get("STREAM_IMG_SIZE", "640"))     # YOLO imgsz for stream
+STREAM_CONF         = float(os.environ.get("STREAM_CONF", "0.25"))
+
+# Still-capture detection (kept for parity)
+CAPTURE_IMG_SIZE    = int(os.environ.get("CAPTURE_IMG_SIZE", "800"))
+CAPTURE_CONF        = float(os.environ.get("CAPTURE_CONF", "0.25"))
+
+# Rotation flags for the stream frames
+ROTATE_STILL_180  = os.environ.get("ROTATE_STILL_180", "0") == "1"
+ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "0") == "1"
+ROTATE_STREAM_90  = os.environ.get("ROTATE_STREAM_90",  "1") == "1"  # default True to match previous
+
+# OCR gating
+OCR_MIN_CONF      = 0.90     # 90%
+OCR_COOLDOWN_SEC  = 5
+_last_ocr_time    = 0.0
+
+# Latest result cache for frontend polling
+_latest_result     = None
+_latest_result_ts  = 0.0
+
+# Camera enable
+CAMERA_ENABLED = os.environ.get("CAMERA_ENABLED", "0") == "1"
+
+# USB camera settings
+USB_DEVICE_INDEX = int(os.environ.get("USB_DEVICE_INDEX", "0"))
+USB_WIDTH        = int(os.environ.get("USB_WIDTH", "1280"))
+USB_HEIGHT       = int(os.environ.get("USB_HEIGHT", "720"))
+USB_FPS          = int(os.environ.get("USB_FPS", "30"))
+
+# Stream pacing (prevents fast/slow bursts)
+TARGET_STREAM_FPS = int(os.environ.get("TARGET_STREAM_FPS", "15"))
+_FRAME_PERIOD     = 1.0 / max(1, TARGET_STREAM_FPS)
+
+log = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# YOLO
+# ──────────────────────────────────────────────────────────────────────────────
+yolo_model = YOLO(YOLO_WEIGHTS, task="detect")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# FastAPI router + Camera (USB only)
+# ──────────────────────────────────────────────────────────────────────────────
 router = APIRouter()
-picam = Picamera2()
+_camera_init_lock = Lock()
+_capture_lock     = Lock()
 
-vid_config = picam.create_video_configuration(
-    main={"size": (640, 480)},
-    controls={"FrameRate": 30}
-)
+usb_cap = None           # type: cv2.VideoCapture | None
+_camera_started = False
 
-pic_config = picam.create_still_configuration(
-    main={"size": (4608, 2592)},
-    controls={"AfMode": 1}
-)
+def _open_usb_camera():
+    """
+    Open a USB UVC camera. Use MJPG + tiny buffer for low latency.
+    """
+    # Prefer V4L2 backend on Linux
+    cap = cv2.VideoCapture(USB_DEVICE_INDEX, cv2.CAP_V4L2)
+    if not cap or not cap.isOpened():
+        cap = cv2.VideoCapture(USB_DEVICE_INDEX)
+    if not cap or not cap.isOpened():
+        raise HTTPException(status_code=500, detail=f"USB camera not available at index {USB_DEVICE_INDEX}")
 
-with cam_lock:
-    picam.configure(pic_config)
-    picam.start()
-    picam.set_controls({"AfTrigger": 0})
-    timeout = time.time() + 10
-    while time.time() < timeout:
-        if picam.capture_metadata().get("AfState", 0) == 2:
-            break
-        time.sleep(0.2)
-    time.sleep(1)
-    picam.stop()
-    picam.configure(vid_config)
-    picam.start()
-    time.sleep(0.5)
+    # Best-effort property sets (some cams may ignore certain sets)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  USB_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, USB_HEIGHT)
+    cap.set(cv2.CAP_PROP_FPS,          USB_FPS)
 
-# Keep only the latest set of 4 images (and one PDF) in this folder
-OCR_SAVE_DIR = os.environ.get("OCR_SAVE_DIR", "/data/ocr_latest")
-os.makedirs(OCR_SAVE_DIR, exist_ok=True)
-
-def _clear_dir(path: str):
-    for name in os.listdir(path):
-        p = os.path.join(path, name)
-        try:
-            if os.path.isfile(p) or os.path.islink(p):
-                os.remove(p)
-        except Exception as e:
-            print(f"[DEBUG] Failed to remove {p}: {e}")
-
-def _atomic_write_image(path: str, img: np.ndarray):
-    # ensure uint8 format for OpenCV writers
-    if img.dtype != np.uint8:
-        img = np.clip(img, 0, 255).astype(np.uint8)
-
-    base, ext = os.path.splitext(path)   # ext like ".jpg" / ".png"
-    tmp = f"{base}.tmp{ext}"             # e.g., "full.tmp.jpg" => encoder is jpg
-    ok = cv2.imwrite(tmp, img)
+    # Sanity-check: try one grab (don’t block if it fails)
+    ok, _ = cap.read()
     if not ok:
-        raise RuntimeError(f"cv2.imwrite failed for {tmp}")
-    os.replace(tmp, path)                # atomic-ish rename
+        cap.release()
+        raise HTTPException(status_code=500, detail="USB camera opened but failed to read a frame")
 
+    return cap
 
-def _save_latest_set(proc_full, proc_top, proc_middle, proc_bottom, make_pdf: bool = True):
-    """
-    Overwrite the latest set in OCR_SAVE_DIR:
-      - full.jpg, top.jpg, middle.jpg, bottom.jpg
-      - ocr_postprocessed.pdf (optional)
-    """
-    os.makedirs(OCR_SAVE_DIR, exist_ok=True)
-    _clear_dir(OCR_SAVE_DIR)
+def _ensure_camera_started():
+    """Initialise and start the USB camera lazily."""
+    global usb_cap, _camera_started
+    if not CAMERA_ENABLED:
+        raise HTTPException(status_code=503, detail="Camera disabled")
 
-    full_p   = os.path.join(OCR_SAVE_DIR, "full.jpg")
-    top_p    = os.path.join(OCR_SAVE_DIR, "top.jpg")
-    middle_p = os.path.join(OCR_SAVE_DIR, "middle.jpg")
-    bottom_p = os.path.join(OCR_SAVE_DIR, "bottom.jpg")
+    with _camera_init_lock:
+        if _camera_started and usb_cap is not None:
+            return usb_cap
 
-    _atomic_write_image(full_p,   proc_full)
-    _atomic_write_image(top_p,    proc_top)
-    _atomic_write_image(middle_p, proc_middle)
-    _atomic_write_image(bottom_p, proc_bottom)
+        usb_cap = _open_usb_camera()
+        _camera_started = True
+        log.info(f"USB camera started (idx={USB_DEVICE_INDEX}, {USB_WIDTH}x{USB_HEIGHT}@{USB_FPS}, MJPG)")
+        return usb_cap
 
-    if make_pdf:
-        try:
-            from reportlab.platypus import SimpleDocTemplate, Image as RLImage, Spacer
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib.units import inch
-            from reportlab.lib.utils import ImageReader
+# ──────────────────────────────────────────────────────────────────────────────
+# Geometry helpers for deskew
+# ──────────────────────────────────────────────────────────────────────────────
+def clip_box(box, w, h):
+    x1, y1, x2, y2 = box
+    return [max(0, int(x1)), max(0, int(y1)), min(w - 1, int(x2)), min(h - 1, int(y2))]
 
-            pdf_p = os.path.join(OCR_SAVE_DIR, "ocr_postprocessed.pdf")
-            doc = SimpleDocTemplate(
-                pdf_p, pagesize=A4,
-                leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36
-            )
-            page_w, page_h = A4
-            frame_w = page_w - doc.leftMargin - doc.rightMargin
-            frame_h = page_h - doc.topMargin - doc.bottomMargin
+def _order_box_points(pts):
+    s = pts.sum(axis=1)
+    diff = np.diff(pts, axis=1).reshape(-1)
+    tl = pts[np.argmin(s)]
+    br = pts[np.argmax(s)]
+    tr = pts[np.argmin(diff)]
+    bl = pts[np.argmax(diff)]
+    return np.array([tl, tr, br, bl], dtype="float32")
 
-            elements = []
-            for p in [full_p, top_p, middle_p, bottom_p]:
-                iw, ih = ImageReader(p).getSize()
-                s = min(frame_w/iw, frame_h/ih)
-                elements.append(RLImage(p, width=iw*s, height=ih*s))
-                elements.append(Spacer(1, 0.25*inch))
-            doc.build(elements)
-            print(f"[DEBUG] Saved latest PDF: {pdf_p}")
-        except Exception as e:
-            try:
-                from PIL import Image as PILImage
-                pdf_p = os.path.join(OCR_SAVE_DIR, "ocr_postprocessed.pdf")
-                imgs = [full_p, top_p, middle_p, bottom_p]
-                pil = [PILImage.open(p).convert("RGB") for p in imgs]
-                pil[0].save(pdf_p, "PDF", resolution=200.0, save_all=True, append_images=pil[1:])
-                print(f"[DEBUG] Saved latest PDF (Pillow): {pdf_p}")
-            except Exception as e2:
-                print(f"[DEBUG] PDF save failed (both methods): {e} / {e2}")
+def find_minrect_and_crop(upright_bgr):
+    dbg = []
+    h, w = upright_bgr.shape[:2]
+    g = cv2.cvtColor(upright_bgr, cv2.COLOR_BGR2GRAY)
+    g = cv2.GaussianBlur(g, (3, 3), 0)
+    edges = cv2.Canny(g, 60, 160)
+    cnts, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return None, dbg
+    img_area = float(h * w)
+    best_rect, best_c, best_score = None, None, -1.0
+    for c in cnts:
+        if len(c) < 4:
+            continue
+        rect = cv2.minAreaRect(c)
+        (rw, rh) = rect[1]
+        rect_area = float(max(rw * rh, 1.0))
+        if rect_area < 0.25 * img_area:
+            continue
+        aspect = max(rw, rh) / (min(rw, rh) + 1e-6)
+        if aspect > 5.0:
+            continue
+        cnt_area = cv2.contourArea(c)
+        extent = float(cnt_area) / rect_area
+        (cx, cy) = rect[0]
+        dx = (cx - w / 2.0) / w
+        dy = (cy - h / 2.0) / h
+        center_bonus = 1.0 - min(1.0, (dx * dx + dy * dy) ** 0.5 * 2.0)
+        score = (rect_area / img_area) + 0.8 * extent + 0.2 * center_bonus - 0.02 * abs(aspect - 1.5)
+        if score > best_score:
+            best_score, best_rect, best_c = score, rect, c
+    if best_rect is None:
+        return None, dbg
+    box = cv2.boxPoints(best_rect).astype("float32")
+    ordered = _order_box_points(box)
+    (tl, tr, br, bl) = ordered
+    widthA  = np.linalg.norm(br - bl)
+    widthB  = np.linalg.norm(tr - tl)
+    heightA = np.linalg.norm(tr - br)
+    heightB = np.linalg.norm(tl - bl)
+    W = int(round(max(widthA, widthB))); W = max(W, 1)
+    H = int(round(max(heightA, heightB))); H = max(H, 1)
+    dst = np.array([[0, 0], [W - 1, 0], [W - 1, H - 1], [0, H - 1]], dtype="float32")
+    P = cv2.getPerspectiveTransform(ordered, dst)
+    roi = cv2.warpPerspective(upright_bgr, P, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    return roi, [("chosen_score", round(best_score,3)), ("rect_size",(W,H))]
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Template selection + crop
+# ──────────────────────────────────────────────────────────────────────────────
+def select_template_path_from_class(cls_name: str) -> Path:
+    variant = CLASS_TO_VARIANT.get(cls_name)
+    if not variant:
+        raise FileNotFoundError(f"No template mapping for class '{cls_name}'")
+    p = TEMPLATE_DIR / f"registration_{variant}.json"
+    if not p.exists():
+        raise FileNotFoundError(f"Template not found: {p}")
+    return p
 
+def apply_template_crops(img_bgr, template_path: Path, out_dir: Path, stem: str, draw_overlay=True):
+    H, W = img_bgr.shape[:2]
+    tpl = json.loads(Path(template_path).read_text())
+    overlay = img_bgr.copy()
+    out_paths = []
+    for spec in tpl:
+        x = int(spec["x"] * W); y = int(spec["y"] * H)
+        w = int(spec["w"] * W); h = int(spec["h"] * H)
+        x2, y2 = min(W, x+w), min(H, y+h)
+        roi = img_bgr[y:y2, x:x2].copy()
+        out_p = out_dir / f"{stem}_{spec['name']}.jpg"
+        cv2.imwrite(str(out_p), roi)
+        out_paths.append(out_p)
+        if draw_overlay:
+            cv2.rectangle(overlay, (x,y), (x+w,y+h), (0,0,255), 2)
+            cv2.putText(overlay, spec["name"], (x, max(16,y-6)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
+    if draw_overlay:
+        ov_p = out_dir / f"{stem}.template_overlay.jpg"
+        cv2.imwrite(str(ov_p), overlay)
+    return out_paths
 
-def split_positions(height: int, offset_ratio: float = 0.05):
-    """Return (y1, y2) for top/mid/bot split, shifted down by offset_ratio of height."""
-    offset = int(height * offset_ratio)           # e.g., 5% downward shift
-    y1 = height // 3 + offset
-    y2 = (2 * height) // 3 + offset
-    # clamp to valid range (avoid going past the image)
-    y1 = max(0, min(height - 1, y1))
-    y2 = max(0, min(height - 1, y2))
-    if y2 <= y1:  # ensure proper order if clamped hard
-        y2 = min(height - 1, y1 + max(1, height // 10))
-    return y1, y2
+# ──────────────────────────────────────────────────────────────────────────────
+# Livestream overlay (YOLO)
+# ──────────────────────────────────────────────────────────────────────────────
+_last_boxes = []
+_frame_idx  = 0
 
-def preprocess_pipeline(frame_bgr: np.ndarray, gamma: float = 1.5) -> np.ndarray:
-    # 1) Grayscale
-    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+def _yolo_detect_boxes(img_bgr, imgsz, conf):
+    if yolo_model is None:
+        return []
+    res = yolo_model.predict(img_bgr, imgsz=imgsz, conf=conf, verbose=False)[0]
+    out = []
+    for bb in res.boxes:
+        c = float(bb.conf.detach().cpu().item())
+        cls_id = int(bb.cls.detach().cpu().item())
+        cls_name = yolo_model.names[cls_id]
+        x1, y1, x2, y2 = [float(v) for v in bb.xyxy[0].tolist()]
+        out.append((x1, y1, x2, y2, c, cls_name))
+    return out
 
-    # 1b) Illumination correction
-    bg   = cv2.medianBlur(gray, 31)
-    norm = cv2.divide(gray, bg, scale=255)
+def _draw_boxes(img_bgr, boxes, color=(0,255,0)):
+    for (x1,y1,x2,y2,c,cls) in boxes:
+        p1 = (int(x1), int(y1)); p2 = (int(x2), int(y2))
+        cv2.rectangle(img_bgr, p1, p2, color, 2)
+        label = f"{cls} {c:.2f}"
+        cv2.putText(img_bgr, label, (p1[0], max(15, p1[1]-6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    return img_bgr
 
-    # 2) CLAHE
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    contrast = clahe.apply(norm)
+# ──────────────────────────────────────────────────────────────────────────────
+# OCR
+# ──────────────────────────────────────────────────────────────────────────────
+def _run_ocr_on_detection(frame_bgr, det, cls_name):
+    # det = (x1,y1,x2,y2,conf,cls_name)
+    H, W = frame_bgr.shape[:2]
+    x1, y1, x2, y2 = map(int, det[:4])
 
-    # 2b) Deskew
-    thr   = cv2.threshold(contrast, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-    edges = cv2.Canny(thr, 50, 150)
-    lines = cv2.HoughLines(edges, 1, np.pi/180, 200)
-    angle = 0.0
-    if lines is not None:
-        angs = []
-        for rho, theta in lines[:, 0]:
-            deg = (theta * 180 / np.pi) - 90
-            if -10 < deg < 10:
-                angs.append(deg)
-        if angs:
-            angle = float(np.median(angs))
-    M = cv2.getRotationMatrix2D((contrast.shape[1]//2, contrast.shape[0]//2), angle, 1.0)
-    deskew = cv2.warpAffine(
-        contrast, M, (contrast.shape[1], contrast.shape[0]),
-        flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=255
-    )
+    # pad & clip
+    PAD = 12
+    x1p = max(0, x1 - PAD); y1p = max(0, y1 - PAD)
+    x2p = min(W - 1, x2 + PAD); y2p = min(H - 1, y2 + PAD)
+    crop = frame_bgr[y1p:y2p, x1p:x2p].copy()
 
-    # 2c) Remove lines
-    binv = cv2.threshold(deskew, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-    mask = np.zeros_like(binv); mask[5:-5, 5:-5] = 255
-    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(40, deskew.shape[1]//12), 1))
-    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(40, deskew.shape[0]//18)))
-    h_lines = cv2.bitwise_and(cv2.morphologyEx(binv, cv2.MORPH_OPEN, h_kernel), mask)
-    v_lines = cv2.bitwise_and(cv2.morphologyEx(binv, cv2.MORPH_OPEN, v_kernel), mask)
-    lines_union   = cv2.bitwise_or(h_lines, v_lines)
-    binv_nolines  = cv2.bitwise_and(binv, cv2.bitwise_not(lines_union))
-    line_removed  = cv2.bitwise_not(binv_nolines)
+    # deskew to min-area rectangle
+    rect_img, dbg = find_minrect_and_crop(crop)
+    if rect_img is None or rect_img.size == 0:
+        raise RuntimeError("Rectangular slip region not found in stream frame.")
 
-    # 3) Denoise
-    denoised = cv2.bilateralFilter(line_removed, d=9, sigmaColor=75, sigmaSpace=75)
+    # choose template by class
+    tpl_path = select_template_path_from_class(cls_name)
 
-    # 4) Sharpen
-    kernel = np.array([[0, -1, 0],
-                       [-1, 5, -1],
-                       [0, -1, 0]])
-    sharpened = cv2.filter2D(denoised, -1, kernel)
+    # save crops + overlay
+    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    stem = f"slip_{ts}"
+    _ = apply_template_crops(rect_img, tpl_path, OUT_DIR, stem, draw_overlay=True)
 
-    # 5) Gamma
-    inv_gamma = 1.0 / gamma
-    table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
-    gamma_corrected = cv2.LUT(sharpened, table)
-    gamma_corrected = crop_black_margins(gamma_corrected, black_thresh=30, percent=0.5)
+    # OCR the clinic_* fields, keep order
+    clinics_in_order, fields = [], {}
+    for idx in [1, 2, 3]:
+        p = OUT_DIR / f"{stem}_clinic_{idx}.jpg"
+        if p.exists():
+            imgc = cv2.imread(str(p))
+            txt = pytesseract.image_to_string(imgc, config="--psm 6").strip()
+            fields[f"clinic_{idx}"] = txt
+            if txt:
+                clinics_in_order.append(txt)
 
-    return gamma_corrected
+    result = {
+        "capture_id": ts,
+        "yolo": {"class": cls_name, "conf": float(det[4]), "box": [x1,y1,x2,y2]},
+        "locations": clinics_in_order,
+        "clinics": clinics_in_order,
+        "fields": fields,
+        "outputs": {
+            "overlay": str((OUT_DIR / f"{stem}.template_overlay.jpg").as_posix()),
+            "crops_dir": str(OUT_DIR.as_posix())
+        }
+    }
+    (OUT_DIR / f"{stem}.json").write_text(json.dumps(result, indent=2))
 
+    # publish latest result for frontend polling
+    global _latest_result, _latest_result_ts
+    _latest_result = {
+        "locations": result.get("locations", []),
+        "yolo": result["yolo"],
+        "capture_id": result["capture_id"],
+    }
+    _latest_result_ts = time.time()
 
-def _ocr_best_location(bgr_img: np.ndarray, return_proc: bool = False):
-    proc = preprocess_pipeline(bgr_img)
-    text = pytesseract.image_to_string(proc, config="--psm 6", lang="eng")
-    print("[DEBUG] OCR raw text:\n" + text.replace("\n", "⏎\n"))
-    locs = match(text)
-    return (locs, text, proc) if return_proc else (locs, text)
+    return result
 
-
-def crop_black_margins(img: np.ndarray, black_thresh: int = 30, percent: float = 0.5):
-    """
-    Crop left/right columns where the fraction of black pixels > percent.
-    - img: grayscale or binary (0=black, 255=white)
-    - black_thresh: pixel intensity threshold for "black"
-    - percent: fraction of black pixels per column to trigger crop
-    """
-    # Ensure grayscale
-    if len(img.shape) == 3:
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = img
-
-    # Binary threshold (black=1, white=0)
-    black_mask = (gray < black_thresh).astype(np.uint8)
-
-    H, W = black_mask.shape
-    col_black_frac = black_mask.sum(axis=0) / H  # fraction per column
-
-    # Find left bound
-    left = 0
-    for i, frac in enumerate(col_black_frac):
-        if frac < percent:
-            left = i
-            break
-
-    # Find right bound
-    right = W - 1
-    for i in range(W-1, -1, -1):
-        if col_black_frac[i] < percent:
-            right = i
-            break
-
-    # Crop safely
-    if right > left:
-        return img[:, left:right]
-    return img  # no crop if bounds invalid
-
-
+# ──────────────────────────────────────────────────────────────────────────────
+# Routes
+# ──────────────────────────────────────────────────────────────────────────────
 @router.post("/ocr")
 async def run_ocr():
-    with cam_lock:
+    # Demo payload (real OCR is triggered from the stream when a good box appears)
+    result = {
+        "capture_id": "demo-capture",
+        "locations": ["Ward 2", "Orthopaedic Centre", "Clinic J"],
+        "yolo": {"class": "slip_1", "conf": 0.99, "box": [12, 34, 200, 320]},
+        "clinics": ["Ward 2", "Orthopaedic Centre", "Clinic J"],
+        "fields": {
+            "clinic_1": "Ward 2",
+            "clinic_2": "Orthopaedic Centre",
+            "clinic_3": "Clinic J",
+        },
+        "outputs": {
+            "overlay": "/data/ocr_latest/frames/demo-capture.template_overlay.jpg",
+            "crops_dir": "/data/ocr_latest/frames"
+        },
+    }
+
+    global _latest_result, _latest_result_ts
+    _latest_result = {
+        "locations": result["locations"],
+        "yolo": result["yolo"],
+        "capture_id": result["capture_id"],
+    }
+    _latest_result_ts = time.time()
+
+    return JSONResponse(content=result)
+
+def _render_stream_frame():
+    """
+    Capture, annotate, and encode a single frame for the MJPEG stream (USB cam).
+    Includes:
+      - MJPG + buffer=1 at device level (set in _open_usb_camera)
+      - Pacing to TARGET_STREAM_FPS to avoid burstiness
+      - YOLO on a downsized copy; boxes rescaled to original frame
+    """
+    global _last_boxes, _frame_idx, _last_ocr_time
+
+    if not CAMERA_ENABLED:
+        raise RuntimeError("Camera disabled")
+
+    cam_handle = _ensure_camera_started()
+
+    with _capture_lock:
+        ret, frame = cam_handle.read()
+        if not ret or frame is None:
+            raise RuntimeError("Failed to read from USB camera")
+        # frame is BGR
+
+    if ROTATE_STREAM_180:
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
+    if ROTATE_STREAM_90:
+        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+    # Run detection every N frames on a downsized copy; rescale boxes back
+    if yolo_model is not None and (_frame_idx % STREAM_DET_INTERVAL == 0):
         try:
-            # autofocus
-            picam.stop()
-            picam.configure(pic_config)
-            picam.start()
-            picam.set_controls({"AfTrigger": 0})
-            timeout = time.time() + 10
-            while time.time() < timeout:
-                if picam.capture_metadata().get("AfState", 0) == 2:
-                    break
-                time.sleep(0.2)
-            time.sleep(1)
-
-            # capture + rotate
-            frame = cv2.rotate(picam.capture_array(), cv2.ROTATE_180)
-
-            # crop
-            H, W = frame.shape[:2]
-            x, y, w, h = 1210, 536, 1994, 2021
-            pad = 4
-            x = max(0, x - pad); y = max(0, y - pad)
-            w = min(W - x, w + 2*pad); h = min(H - y, h + 2*pad)
-            roi = frame[y:y+h, x:x+w]
-            proc_full = preprocess_pipeline(roi)
-
-            # split into thirds
-            rH, rW = roi.shape[:2]
-            y1, y2 = split_positions(rH, offset_ratio=-0.04)  # same value as stream
-
-            top    = roi[0:y1, :]
-            middle = roi[y1:y2, :]
-            bottom = roi[y2:rH, :]
-            # OCR each
-            dest_top,    text_top,    proc_top    = _ocr_best_location(top,    return_proc=True)
-            dest_middle, text_middle, proc_middle = _ocr_best_location(middle, return_proc=True)
-            dest_bottom, text_bottom, proc_bottom = _ocr_best_location(bottom, return_proc=True)
-            print(
-    f"[DEBUG] dest_top={dest_top!r}, dest_middle={dest_middle!r}, dest_bottom={dest_bottom!r}",
-    flush=True
-) 
-            try:
-                _save_latest_set(proc_full, proc_top, proc_middle, proc_bottom, make_pdf=True)
-            except Exception as e:
-                print(f"[DEBUG] Saving latest set failed: {e}")
-
-
-            # restore video stream
-            picam.stop()
-            picam.configure(vid_config)
-            picam.start()
-            ''' use this if want a fix return
-            return JSONResponse(content={
-                "locations": [
-                    "Clinic A",
-                    "Cocoon Clinic"
-                ]
-            })
-            '''
-            return JSONResponse(content={
-                "locations": [
-                    dest_top,
-                    dest_middle,
-                    dest_bottom
-                ]
-            })
-
+            h, w = frame.shape[:2]
+            small = cv2.resize(frame, (STREAM_IMG_SIZE, STREAM_IMG_SIZE), interpolation=cv2.INTER_AREA)
+            boxes_small = _yolo_detect_boxes(small, STREAM_IMG_SIZE, STREAM_CONF)
+            sx = w / float(STREAM_IMG_SIZE)
+            sy = h / float(STREAM_IMG_SIZE)
+            _last_boxes = [(x1*sx, y1*sy, x2*sx, y2*sy, c, cls) for (x1,y1,x2,y2,c,cls) in boxes_small]
         except Exception as e:
-            try:
-                picam.stop()
-                picam.configure(vid_config)
-                picam.start()
-            except:
-                pass
-            raise HTTPException(status_code=500, detail=str(e))
+            _last_boxes = []
 
-# MJPEG Stream Route
+    _frame_idx += 1
+
+    best_conf = 0.0
+    best_det = None
+    if _last_boxes:
+        best_det = max(_last_boxes, key=lambda b: b[4])
+        best_conf = best_det[4]
+        frame = _draw_boxes(frame, _last_boxes, (0, 255, 0))
+
+    cv2.putText(
+        frame,
+        f"frm:{_frame_idx} det:{len(_last_boxes)} conf:{best_conf*100:.1f}%",
+        (10, 25),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2,
+    )
+
+    # Time-gated OCR (by seconds), not every frame
+    now = time.time()
+    if best_det and best_conf >= OCR_MIN_CONF and (now - _last_ocr_time) >= OCR_COOLDOWN_SEC:
+        try:
+            _ = _run_ocr_on_detection(frame.copy(), best_det, best_det[5])
+            _last_ocr_time = now
+            cv2.putText(frame, "OCR OK", (10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        except Exception as e:
+            cv2.putText(frame, f"OCR ERR: {str(e)[:28]}", (10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+    # Pace the stream output to a fixed FPS to avoid burstiness
+    t_now = time.time()
+    if not hasattr(_render_stream_frame, "_last_t"):
+        _render_stream_frame._last_t = t_now
+    dt = t_now - _render_stream_frame._last_t
+    if dt < _FRAME_PERIOD:
+        time.sleep(_FRAME_PERIOD - dt)
+    _render_stream_frame._last_t = time.time()
+
+    # Encode MJPEG chunk
+    ok, jpeg = cv2.imencode(".jpg", frame)
+    if not ok:
+        raise RuntimeError("JPEG encode failed")
+    return (
+        b"--FRAME\r\n"
+        b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
+    )
+
 @router.get("/stream.mjpg")
-def stream():
-    def generate():
-        while True:
-            with cam_lock:
+async def stream(request: Request):
+    if not CAMERA_ENABLED:
+        raise HTTPException(status_code=503, detail="Camera livestream disabled")
 
-                frame = picam.capture_array()
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                frame = cv2.rotate(frame, cv2.ROTATE_180)
+    async def generate():
+        log.info("USB stream start")
+        try:
+            while True:
+                if await request.is_disconnected():
+                    log.info("client disconnected; stopping MJPEG stream")
+                    break
+                chunk = await asyncio.to_thread(_render_stream_frame)
+                yield chunk
+        except asyncio.CancelledError:
+            raise
+        finally:
+            log.info("stream generator closed")
 
-                H, W = frame.shape[:2]
-                y1, y2 = split_positions(H, offset_ratio=0.08)
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=FRAME",
+    )
 
-                # red in BGR = (0, 0, 255)
-                cv2.line(frame, (0, y1), (W - 1, y1), (0, 0, 255), thickness=3, lineType=cv2.LINE_AA)
-                cv2.line(frame, (0, y2), (W - 1, y2), (0, 0, 255), thickness=3, lineType=cv2.LINE_AA)
-                _, jpeg = cv2.imencode('.jpg', frame)
-            yield (b'--FRAME\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-    return StreamingResponse(generate(), media_type='multipart/x-mixed-replace; boundary=FRAME')
+@router.get("/latest_result")
+def latest_result():
+    if _latest_result is None:
+        return {"ready": False}
+    return {"ready": True, "updated_at": _latest_result_ts, "data": _latest_result}
+
+@router.get("/health")
+def health():
+    return {"ok": True}
