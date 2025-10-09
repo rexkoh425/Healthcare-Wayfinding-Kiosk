@@ -82,11 +82,6 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
     return deduped.slice(0, 3);
   }, [locations, paramsString]);
 
-<<<<<<< Updated upstream
-  const handleSelectDestination = (selected: string) => {
-    if (!selected) {
-      alert("No destination selected. Please restart the scan.");
-=======
   useEffect(() => {
     setSelectedDestination((prev) => {
       if (destinations.length === 0) {
@@ -101,7 +96,6 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
 
   const handleDestinationSelect = (destination: string) => {
     if (!destination || submitting) {
->>>>>>> Stashed changes
       return;
     }
 
@@ -114,12 +108,7 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
         nextParams.delete(key);
       });
 
-<<<<<<< Updated upstream
-      nextParams.append("dest", selected);
-
-=======
       nextParams.append("dest", destination);
->>>>>>> Stashed changes
       const query = nextParams.toString();
       router.push(query ? `${targetPath}?${query}` : targetPath);
     } catch (error) {
@@ -146,24 +135,6 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
         {destinations.length === 0 ? (
           <p>No destinations detected.</p>
         ) : (
-<<<<<<< Updated upstream
-          <div className="mb-8 flex flex-col gap-4">
-            {destinations.map((location) => (
-              <Button
-                key={location}
-                onClick={() => handleSelectDestination(location)}
-                disabled={submitting}
-                className="bg-hospital-teal text-white text-lg py-6"
-              >
-                {location}
-              </Button>
-            ))}
-          </div>
-        )}
-
-        <div className="flex justify-center">
-          <Button variant="ghost" onClick={onRestart} disabled={submitting}>
-=======
           <ul className="mb-8 space-y-2">
             {destinations.map((location) => {
               const isSelected = location === selectedDestination;
@@ -189,7 +160,6 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
 
         <div className="flex justify-center">
           <Button variant="ghost" onClick={handleRestart} disabled={submitting}>
->>>>>>> Stashed changes
             Restart
           </Button>
         </div>
