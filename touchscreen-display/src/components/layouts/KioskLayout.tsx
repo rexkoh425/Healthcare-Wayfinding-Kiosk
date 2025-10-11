@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Route, Globe } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
+import useWebSocket from "@/lib/useWebSocket";
 
 const languages = [
   { id: "en", name: "English", local: "English" },
@@ -23,6 +24,7 @@ const KioskLayout: React.FC<KioskLayoutProps> = ({
 }) => {
   const router = useRouter();
   const { t, i18n } = useTranslation();
+  const { send } = useWebSocket();
 
   // Local state for currently‐selected language; default = 'en'
   const [selectedLang, setSelectedLang] = useState<string>("en");
@@ -32,11 +34,16 @@ const KioskLayout: React.FC<KioskLayoutProps> = ({
     i18n.changeLanguage(langId);
   };
 
+  const handleBack = () => {
+    send({ type: "action", action: "idle" });
+    router.push("/");
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-hospital-gray">
       {showHeader && (
         <header className="bg-white shadow-sm border-b border-hospital-blue/10 p-4">
-          <button onClick={() => router.push("/")}>
+          <button onClick={handleBack}>
             <div className="container mx-auto flex items-center">
               <Route className="h-8 w-8 text-hospital-teal mr-3" />
               <h1 className="text-2xl font-bold text-hospital-blue-gray">
