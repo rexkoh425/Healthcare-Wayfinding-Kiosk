@@ -38,7 +38,7 @@ const ChatScreen: React.FC = () => {
   useEffect(() => {
     send({ type: "action", action: "talk" });
     return () => {
-      send({ type: "action", action: "idle" });
+      send({ type: "action", action: "hear" });
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
@@ -117,7 +117,14 @@ const ChatScreen: React.FC = () => {
             throw new Error(`Invalid JSON payload: ${raw.slice(0, 200)}`);
           }
 
+          send({ type: "action", action: "hear" });
+          
           setTranscript(typeof payload?.transcript === "string" ? payload.transcript : null);
+
+          // Send transcript to server for hologram subtitles
+          if (typeof payload?.llm.response_text === "string" && payload.llm.response_text.trim().length > 0) {
+            send({ type: "subtitle", text: payload.llm.response_text.trim() });
+          }
 
           const locations: string[] = Array.isArray(payload?.llm?.locations)
             ? payload.llm.locations.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0)
