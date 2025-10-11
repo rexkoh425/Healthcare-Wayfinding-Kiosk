@@ -128,3 +128,14 @@ To view how the app will look like in your browser with the dimensions of an iPa
 1. Go to Developer Tools
 2. Select iPad Mini under Dimensions
 3. Rotate the screen such that it becomes landscape
+
+## RFID
+```bash
+sudo apt update
+sudo apt install python3-evdev
+cd rfid
+python3 -m venv .venv --system-site-packages
+source .venv/bin/activate
+pip install -r requirements.txt
+sudo python3 rfidv1.py
+```

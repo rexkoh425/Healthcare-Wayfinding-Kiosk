@@ -67,9 +67,7 @@ services:
     volumes:
       - ./rfid:/app
       - ./certs:/certs:ro
-    command: python rfid.py
-    stdin_open: true   # equivalent to -i
-    tty: true          # equivalent to -t
+    command: sudo python rfidv1.py
 
   ocr:
     build:
