@@ -4,7 +4,7 @@ import os, time, json, asyncio
 from threading import Lock
 from pathlib import Path
 from datetime import datetime
-
+# this is for USB camera
 import cv2
 import numpy as np
 import pytesseract
@@ -16,30 +16,36 @@ from ultralytics import YOLO
 # Config
 # ──────────────────────────────────────────────────────────────────────────────
 YOLO_WEIGHTS = os.environ.get("YOLO_WEIGHTS", "model_weights/best.pt")
-CLASS_TO_VARIANT = {"slip_1": 1, "slip_2": 2, "slip_3": 3}
+CLASS_TO_VARIANT = {"1": 1, "2": 2, "3": 3}
 
 TEMPLATE_DIR = Path(os.environ.get("TEMPLATE_DIR", "templates"))
 OUT_DIR = Path(os.environ.get("OUT_DIR", "/data/ocr_latest/frames"))
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Livestream detection throttling
-STREAM_DET_INTERVAL = int(os.environ.get("STREAM_DET_INTERVAL", "5"))   # detect every N frames
+STREAM_DET_INTERVAL = int(os.environ.get("STREAM_DET_INTERVAL", "10"))   # detect every N frames
 STREAM_IMG_SIZE     = int(os.environ.get("STREAM_IMG_SIZE", "640"))     # YOLO imgsz for stream
-STREAM_CONF         = float(os.environ.get("STREAM_CONF", "0.25"))
+STREAM_CONF         = float(os.environ.get("STREAM_CONF", "0.75"))
 
 # Still-capture detection (kept for parity)
 CAPTURE_IMG_SIZE    = int(os.environ.get("CAPTURE_IMG_SIZE", "800"))
-CAPTURE_CONF        = float(os.environ.get("CAPTURE_CONF", "0.25"))
+CAPTURE_CONF        = float(os.environ.get("CAPTURE_CONF", "0.40"))
 
 # Rotation flags for the stream frames
 ROTATE_STILL_180  = os.environ.get("ROTATE_STILL_180", "0") == "1"
-ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "0") == "1"
+ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "1") == "1"
 ROTATE_STREAM_90  = os.environ.get("ROTATE_STREAM_90",  "1") == "1"  # default True to match previous
 
 # OCR gating
-OCR_MIN_CONF      = 0.90     # 90%
+OCR_MIN_CONF      = 0.99     # 90%
 OCR_COOLDOWN_SEC  = 5
 _last_ocr_time    = 0.0
+
+OCR_CHAR_WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+OCR_CONFIGS = [
+    f"--psm 6 -l eng --oem 3 -c tessedit_char_whitelist={OCR_CHAR_WHITELIST}",
+    f"--psm 7 -l eng --oem 3 -c tessedit_char_whitelist={OCR_CHAR_WHITELIST}",
+]
 
 # Latest result cache for frontend polling
 _latest_result     = None
@@ -52,7 +58,7 @@ CAMERA_ENABLED = os.environ.get("CAMERA_ENABLED", "0") == "1"
 USB_DEVICE_INDEX = int(os.environ.get("USB_DEVICE_INDEX", "0"))
 USB_WIDTH        = int(os.environ.get("USB_WIDTH", "1280"))
 USB_HEIGHT       = int(os.environ.get("USB_HEIGHT", "720"))
-USB_FPS          = int(os.environ.get("USB_FPS", "30"))
+USB_FPS          = int(os.environ.get("USB_FPS", "25"))
 
 # Stream pacing (prevents fast/slow bursts)
 TARGET_STREAM_FPS = int(os.environ.get("TARGET_STREAM_FPS", "15"))
@@ -122,6 +128,35 @@ def _ensure_camera_started():
 def clip_box(box, w, h):
     x1, y1, x2, y2 = box
     return [max(0, int(x1)), max(0, int(y1)), min(w - 1, int(x2)), min(h - 1, int(y2))]
+
+def enlarge_box_by_scale(box, img_w, img_h, scale_w=1.2, scale_h=1.2):
+    """
+    Expand a box by scale factors around its centre and clamp to the frame.
+    """
+    x1, y1, x2, y2 = map(float, box)
+    cx = (x1 + x2) * 0.5
+    cy = (y1 + y2) * 0.5
+    bw = (x2 - x1)
+    bh = (y2 - y1)
+
+    new_w = bw * float(scale_w)
+    new_h = bh * float(scale_h)
+
+    nx1 = int(round(cx - new_w * 0.5))
+    ny1 = int(round(cy - new_h * 0.5))
+    nx2 = int(round(cx + new_w * 0.5))
+    ny2 = int(round(cy + new_h * 0.5))
+
+    nx1 = max(0, min(img_w - 1, nx1))
+    ny1 = max(0, min(img_h - 1, ny1))
+    nx2 = max(1, min(img_w, nx2))
+    ny2 = max(1, min(img_h, ny2))
+
+    if nx2 <= nx1:
+        nx2 = min(img_w, nx1 + 1)
+    if ny2 <= ny1:
+        ny2 = min(img_h, ny1 + 1)
+    return nx1, ny1, nx2, ny2
 
 def _order_box_points(pts):
     s = pts.sum(axis=1)
@@ -197,17 +232,25 @@ def apply_template_crops(img_bgr, template_path: Path, out_dir: Path, stem: str,
     overlay = img_bgr.copy()
     out_paths = []
     for spec in tpl:
-        x = int(spec["x"] * W); y = int(spec["y"] * H)
-        w = int(spec["w"] * W); h = int(spec["h"] * H)
-        x2, y2 = min(W, x+w), min(H, y+h)
-        roi = img_bgr[y:y2, x:x2].copy()
+        x = int(float(spec["x"]) * W); y = int(float(spec["y"]) * H)
+        w = int(float(spec["w"]) * W); h = int(float(spec["h"]) * H)
+        x2, y2 = min(W, x + w), min(H, y + h)
+
+        pad = 4
+        yy1 = max(0, y - pad); yy2 = min(H, y2 + pad)
+        xx1 = max(0, x - pad); xx2 = min(W, x2 + pad)
+        roi = img_bgr[yy1:yy2, xx1:xx2].copy()
+
         out_p = out_dir / f"{stem}_{spec['name']}.jpg"
         cv2.imwrite(str(out_p), roi)
         out_paths.append(out_p)
         if draw_overlay:
-            cv2.rectangle(overlay, (x,y), (x+w,y+h), (0,0,255), 2)
-            cv2.putText(overlay, spec["name"], (x, max(16,y-6)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
+            cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 0, 255), 2)
+            (tw, th), base = cv2.getTextSize(spec["name"], cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+            lx, ly = x, max(th + 6, y - 6)
+            cv2.rectangle(overlay, (lx - 3, ly - th - 3), (lx + tw + 3, ly + base + 2), (0, 0, 0), cv2.FILLED)
+            cv2.putText(overlay, spec["name"], (lx, ly),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
     if draw_overlay:
         ov_p = out_dir / f"{stem}.template_overlay.jpg"
         cv2.imwrite(str(ov_p), overlay)
@@ -248,11 +291,12 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
     H, W = frame_bgr.shape[:2]
     x1, y1, x2, y2 = map(int, det[:4])
 
-    # pad & clip
-    PAD = 12
-    x1p = max(0, x1 - PAD); y1p = max(0, y1 - PAD)
-    x2p = min(W - 1, x2 + PAD); y2p = min(H - 1, y2 + PAD)
-    crop = frame_bgr[y1p:y2p, x1p:x2p].copy()
+    # Expand and clamp the detection box; improves downstream deskew.
+    x1c, y1c, x2c, y2c = clip_box((x1, y1, x2, y2), W, H)
+    ex1, ey1, ex2, ey2 = enlarge_box_by_scale((x1c, y1c, x2c, y2c), W, H, 1.2, 1.2)
+    crop = frame_bgr[ey1:ey2, ex1:ex2].copy()
+    if crop.size == 0:
+        raise RuntimeError("Scaled crop for OCR is empty")
 
     # deskew to min-area rectangle
     rect_img, dbg = find_minrect_and_crop(crop)
@@ -269,14 +313,22 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
 
     # OCR the clinic_* fields, keep order
     clinics_in_order, fields = [], {}
-    for idx in [1, 2, 3]:
+    for idx in (1, 2, 3):
         p = OUT_DIR / f"{stem}_clinic_{idx}.jpg"
         if p.exists():
             imgc = cv2.imread(str(p))
-            txt = pytesseract.image_to_string(imgc, config="--psm 6").strip()
-            fields[f"clinic_{idx}"] = txt
-            if txt:
-                clinics_in_order.append(txt)
+            if imgc is None or imgc.size == 0:
+                continue
+
+            text = ""
+            for cfg in OCR_CONFIGS:
+                text = pytesseract.image_to_string(imgc, config=cfg).strip()
+                if text:
+                    break
+
+            fields[f"clinic_{idx}"] = text
+            if text:
+                clinics_in_order.append(text)
 
     result = {
         "capture_id": ts,
