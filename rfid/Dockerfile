@@ -26,4 +26,4 @@ COPY . .
 EXPOSE 5000
 
 # Run the Python script
-CMD ["python", "rfid.py"]
+CMD ["sudo python", "rfidv1.py"]
