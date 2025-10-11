@@ -130,12 +130,27 @@ To view how the app will look like in your browser with the dimensions of an iPa
 3. Rotate the screen such that it becomes landscape
 
 ## RFID
+
+Setup
 ```bash
+cd rfid
 sudo apt update
 sudo apt install python3-evdev
-cd rfid
 python3 -m venv .venv --system-site-packages
 source .venv/bin/activate
 pip install -r requirements.txt
 sudo python3 rfidv1.py
+```
+
+To find the RFID device info:
+```bash
+cat /proc/bus/input/devices
+```
+Should look something like this 
+```bash
+I: Bus=0003 Vendor=ffff Product=0035 Version=0110
+N: Name="ARM CM0 USB HID Keyboard"
+P: Phys=usb-xhci-hcd.0-2/input0
+S: Sysfs=/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-2/1-2:1.0/0003:FFFF:0035.0001/input/input1
+...
 ```

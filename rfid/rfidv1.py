@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-from evdev import InputDevice, ecodes, categorize
+from evdev import InputDevice, list_devices, ecodes, categorize
 
-device_path = "/dev/input/event0"  # your RFID reader
-dev = InputDevice(device_path)
+dev = None
+for path in list_devices():
+    d = InputDevice(path)
+    if "arm cm0" in d.name.lower() or "hid keyboard" in d.name.lower():
+        dev = d
+        break
 
-print(f"Using {dev.name} at {device_path}")
-print("Waiting for RFID scans...")
+if not dev:
+    print("RFID device not found")
+    exit(1)
 
-# grab prevents it from typing into text boxes
+print(f"Using {dev.path} ({dev.name})")
 dev.grab()
 
 buffer = []
@@ -23,9 +28,8 @@ for event in dev.read_loop():
                 print("Tag:", tag)
                 buffer = []
             elif code.startswith("KEY_"):
-                k = code[4:]
-                if len(k) == 1:
-                    buffer.append(k)
-                elif k == "MINUS":
+                char = code[4:]
+                if len(char) == 1:
+                    buffer.append(char)
+                elif char == "MINUS":
                     buffer.append("-")
-                # add other symbols if needed
