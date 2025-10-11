@@ -1,4 +1,5 @@
 # rfid_server.py
+import os   
 from flask import Flask, jsonify
 from flask_cors import CORS, cross_origin
 
@@ -9,6 +10,10 @@ cors=CORS(app)
 app.config['CORS_HEADERS'] = 'Content-Type'
 
 SERVER_PORT = 5000  # port for GET /activate
+
+# Path to mounted certs
+CERT_FILE = "certs/cert.pem"
+KEY_FILE = "certs/key.pem"
 
 # -----------------------
 # RFID Keyboard Capture
@@ -33,5 +38,4 @@ def activate():
 # Start everything
 # -----------------------
 if __name__ == "__main__":
-    # Run Flask server
-    app.run(host="0.0.0.0", port=SERVER_PORT)
+    app.run(host="0.0.0.0", port=SERVER_PORT, ssl_context=(CERT_FILE, KEY_FILE))
