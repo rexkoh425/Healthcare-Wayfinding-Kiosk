@@ -7,6 +7,21 @@ import useWebSocket from "@/lib/useWebSocket";
 import { MedicalIcon, MedicalIconType } from "@/components/ui/MedicalIcons";
 import Image from "next/image";
 
+function resolveRfidBase(): string {
+  // Optional: use environment variable first
+  const env = process.env.NEXT_PUBLIC_RFID_API_BASE;
+  if (env) return env.replace(/\/$/, "");
+
+  // Fallback: browser environment
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "https" : "http";
+    const host = window.location.hostname;
+    return `${protocol}://${host}`;
+  }
+
+  // Server-side fallback
+  return "";
+}
 
 const RfidScreen: React.FC = () => {
     const router = useRouter();
@@ -16,20 +31,24 @@ const RfidScreen: React.FC = () => {
     const [dispensing, setDispensing] = useState(true);
 
     const dest = searchParams.get("dest");
+    const baseUrl = resolveRfidBase();
 
     useEffect(() => {
         async function handleTags() {
             try {
                 // 1️⃣ GET request
-                console.log("request rfid reader")
-                const espRes = await fetch("https://192.168.99.54:5000"); // ESP32 endpoint
+                const rfidUrl = baseUrl+":5000"
+                console.log("Requesting RFID reader at:", rfidUrl);
+                const espRes = await fetch(rfidUrl);
                 if (!espRes.ok) throw new Error(`HTTP error from rfid! status: ${espRes.status}`);
 
-                const tagData = await espRes.json(); // assuming ESP32 returns JSON
+                const tagData = await espRes.json();
                 console.log("Received from RFID Reader:", tagData);
 
                 // 2️⃣ POST request to user/backend
-                const postRes = await fetch("http://localhost:8000/users/", {
+                const usersUrl = "https://metal-facts-report.loca.lt" + "/users/"
+                console.log("Posting to Users", baseUrl);
+                const postRes = await fetch(usersUrl, {
                     method: "POST",
                     headers: {
                     "Content-Type": "application/json",

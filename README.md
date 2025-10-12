@@ -155,6 +155,16 @@ S: Sysfs=/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-
 ...
 ```
 
+Running Docker File 
+```bash
+docker build -t rfidimage .
+docker run --rm \
+    -p 5000:5000 \
+    --device /dev/input/event1:/dev/input/event1 \
+    rfidimage
+```
+
+
 ## Clearing Space in Rpi 
 ```bash
 docker compose up --build #build the docker image

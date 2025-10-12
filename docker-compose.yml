@@ -59,16 +59,6 @@ services:
     volumes:
       - ./hologram-display:/usr/share/nginx/html:ro
 
-  # rfid:
-  #   build:
-  #     context: ./rfid
-  #   ports:
-  #     - "5000:5000"
-  #   volumes:
-  #     - ./rfid:/app
-  #     - ./certs:/certs:ro
-  #   command: sudo python rfidv1.py
-
   ocr:
     build:
       context: ./ocr-service
@@ -139,6 +129,18 @@ services:
       - "8001:8001"
       - "9000:9000"
     restart: unless-stopped
+  
+  rfid:
+    build:
+      context: ./rfid
+    ports:
+      - "5000:5000"
+    devices:
+      - "/dev/input/by-id/usb-ARM_CM0_USB_HID_Keyboard_BAF1D93D1201-event-kbd:/dev/input/event1"
+    volumes:
+      - ./rfid:/app
+      - ./certs:/certs:ro
+    command: python rfidv1.py
 
 volumes:
   eic_node_modules:
