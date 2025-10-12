@@ -47,7 +47,7 @@ const RfidScreen: React.FC = () => {
 
                 // 2️⃣ POST request to user/backend
                 const usersUrl = "https://metal-facts-report.loca.lt" + "/users/"
-                console.log("Posting to Users", baseUrl);
+                console.log("Posting to Users", usersUrl);
                 const postRes = await fetch(usersUrl, {
                     method: "POST",
                     headers: {
