@@ -58,7 +58,7 @@ const ChatScreen: React.FC = () => {
       case "playing":
         return "Playing response...";
       default:
-        return "Hold to talk";
+        return "Press to talk";
     }
   })();
 
