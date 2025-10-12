@@ -4,8 +4,8 @@ from flask import Flask, jsonify
 from flask_cors import CORS, cross_origin
 import time
 import logging
-import usb.core
-import usb.util
+# import usb.core
+# import usb.util
 import time
 
 
