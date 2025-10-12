@@ -59,15 +59,15 @@ services:
     volumes:
       - ./hologram-display:/usr/share/nginx/html:ro
 
-  rfid:
-    build:
-      context: ./rfid
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./rfid:/app
-      - ./certs:/certs:ro
-    command: sudo python rfidv1.py
+  # rfid:
+  #   build:
+  #     context: ./rfid
+  #   ports:
+  #     - "5000:5000"
+  #   volumes:
+  #     - ./rfid:/app
+  #     - ./certs:/certs:ro
+  #   command: sudo python rfidv1.py
 
   ocr:
     build:

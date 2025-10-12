@@ -169,7 +169,7 @@ def read_tag():
 # -----------------------
 # Flask Endpoints
 # -----------------------
-@app.route("/readtag", methods=["GET"])
+@app.route("/", methods=["GET"])
 @cross_origin()
 def readTag():
     """Read one RFID tag and return it as JSON."""
@@ -181,15 +181,15 @@ def readTag():
         return jsonify({"error": "RFID device not found"}), 500
 
 
-@app.route("/removetag", methods=["GET"])
-@cross_origin()
-def isTagRemoved():
-    """Wait for the user to physically remove the last tag."""
-    removed = wait_for_tag_removal()
-    if removed:
-        return jsonify({"status": "Tag removed"})
-    else:
-        return jsonify({"error": "Tag removal timeout"}), 500
+# @app.route("/removetag", methods=["GET"])
+# @cross_origin()
+# def isTagRemoved():
+#     """Wait for the user to physically remove the last tag."""
+#     removed = wait_for_tag_removal()
+#     if removed:
+#         return jsonify({"status": "Tag removed"})
+#     else:
+#         return jsonify({"error": "Tag removal timeout"}), 500
 
 
 # -----------------------
