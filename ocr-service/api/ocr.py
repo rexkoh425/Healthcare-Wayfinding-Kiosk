@@ -1,9 +1,13 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 import os, time, json, asyncio
+import re
+from collections import deque
 from threading import Lock
 from pathlib import Path
 from datetime import datetime
+from difflib import SequenceMatcher
+from typing import Tuple, Optional
 # this is for USB camera
 import cv2
 import numpy as np
@@ -33,13 +37,21 @@ CAPTURE_CONF        = float(os.environ.get("CAPTURE_CONF", "0.40"))
 
 # Rotation flags for the stream frames
 ROTATE_STILL_180  = os.environ.get("ROTATE_STILL_180", "0") == "1"
-ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "1") == "1"
-ROTATE_STREAM_90  = os.environ.get("ROTATE_STREAM_90",  "1") == "1"  # default True to match previous
+ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "0") == "1"
+ROTATE_STREAM_90  = os.environ.get("ROTATE_STREAM_90",  "1") == "1"  # default True
 
 # OCR gating
 OCR_MIN_CONF      = 0.99     # 90%
 OCR_COOLDOWN_SEC  = 5
 _last_ocr_time    = 0.0
+
+FUZZY_MATCH_THRESHOLD = float(os.environ.get("OCR_FUZZY_MATCH_THRESHOLD", "0.6"))
+
+STABILITY_WINDOW_SEC       = float(os.environ.get("OCR_STABILITY_WINDOW_SEC", "1.2"))
+STABILITY_MIN_FRAMES       = int(os.environ.get("OCR_STABILITY_MIN_FRAMES", "3"))
+STABILITY_CENTER_JITTER    = float(os.environ.get("OCR_STABILITY_CENTER_JITTER", "0.05"))
+STABILITY_AREA_JITTER      = float(os.environ.get("OCR_STABILITY_AREA_JITTER", "0.25"))
+STABILITY_CONF_THRESHOLD   = float(os.environ.get("OCR_STABILITY_CONF_THRESHOLD", str(OCR_MIN_CONF)))
 
 OCR_CHAR_WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 OCR_CONFIGS = [
@@ -63,8 +75,132 @@ USB_FPS          = int(os.environ.get("USB_FPS", "25"))
 # Stream pacing (prevents fast/slow bursts)
 TARGET_STREAM_FPS = int(os.environ.get("TARGET_STREAM_FPS", "15"))
 _FRAME_PERIOD     = 1.0 / max(1, TARGET_STREAM_FPS)
+STREAM_JPEG_QUALITY = int(os.environ.get("STREAM_JPEG_QUALITY", "90"))
 
 log = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Location matching helpers
+# ──────────────────────────────────────────────────────────────────────────────
+LOCATION_CANDIDATES = [f"Clinic {chr(ord('A') + i)}" for i in range(26)] + [
+    "Cocoon Clinic",
+    "Diagnostic Imaging 2",
+    "X-ray",
+    "Eye Center",
+]
+
+def sanitize_ocr_text(value: Optional[str]) -> str:
+    if value is None:
+        return ""
+    cleaned = str(value).replace("\r", " ").replace("\n", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+def fuzzy_match_location(text: Optional[str], threshold: float = FUZZY_MATCH_THRESHOLD) -> Tuple[Optional[str], float]:
+    cleaned = sanitize_ocr_text(text).lower()
+    if not cleaned:
+        return None, 0.0
+    cleaned_simple = re.sub(r"[^a-z0-9]+", "", cleaned)
+    best_name, best_score = None, 0.0
+    for candidate in LOCATION_CANDIDATES:
+        cand_lower = candidate.lower()
+        candidate_simple = re.sub(r"[^a-z0-9]+", "", cand_lower)
+        base = SequenceMatcher(None, cleaned, cand_lower).ratio()
+        simple = SequenceMatcher(None, cleaned_simple, candidate_simple).ratio()
+        score = max(base, simple)
+        if score > best_score:
+            best_score = score
+            best_name = candidate
+    if best_score < threshold:
+        return None, best_score
+    return best_name, best_score
+
+_detection_history = deque(maxlen=64)
+
+def _update_detection_stability(det, frame_shape, timestamp: float):
+    """
+    Track recent detections to ensure the target stays still and confidence remains high
+    before triggering OCR.
+    Returns (is_stable, sample_count, metrics)
+    """
+    if det is None or frame_shape is None or len(frame_shape) < 2:
+        _detection_history.clear()
+        return False, 0, {"samples": 0, "center_jitter": None, "area_spread": None, "min_conf": None}
+
+    h, w = frame_shape[:2]
+    if h <= 0 or w <= 0:
+        return False, 0, {"samples": 0, "center_jitter": None, "area_spread": None, "min_conf": None}
+
+    diag = float((w ** 2 + h ** 2) ** 0.5) or 1.0
+    x1, y1, x2, y2, conf, cls_name = det
+    cx = (x1 + x2) * 0.5
+    cy = (y1 + y2) * 0.5
+    width = max(x2 - x1, 1.0)
+    height = max(y2 - y1, 1.0)
+    area = width * height
+
+    entry = {
+        "ts": timestamp,
+        "cls": cls_name,
+        "conf": float(conf),
+        "cx": cx,
+        "cy": cy,
+        "area": area,
+    }
+    _detection_history.append(entry)
+
+    while _detection_history and (timestamp - _detection_history[0]["ts"]) > STABILITY_WINDOW_SEC:
+        _detection_history.popleft()
+
+    relevant = [
+        d for d in _detection_history
+        if d["cls"] == cls_name and (timestamp - d["ts"]) <= STABILITY_WINDOW_SEC
+    ]
+
+    metrics = {
+        "samples": len(relevant),
+        "center_jitter": None,
+        "area_spread": None,
+        "min_conf": None,
+    }
+
+    if not relevant:
+        return False, 0, metrics
+
+    min_conf = min(d["conf"] for d in relevant)
+    metrics["min_conf"] = min_conf
+
+    if len(relevant) < STABILITY_MIN_FRAMES or min_conf < STABILITY_CONF_THRESHOLD:
+        return False, len(relevant), metrics
+
+    avg_cx = sum(d["cx"] for d in relevant) / len(relevant)
+    avg_cy = sum(d["cy"] for d in relevant) / len(relevant)
+    avg_area = sum(d["area"] for d in relevant) / len(relevant)
+
+    if avg_area <= 0:
+        avg_area = 1.0
+
+    center_jitter = max(
+        (((d["cx"] - avg_cx) ** 2 + (d["cy"] - avg_cy) ** 2) ** 0.5) / diag
+        for d in relevant
+    )
+    area_spread = max(
+        abs(d["area"] - avg_area) / avg_area
+        for d in relevant
+    )
+
+    metrics["center_jitter"] = center_jitter
+    metrics["area_spread"] = area_spread
+
+    stable = (
+        center_jitter <= STABILITY_CENTER_JITTER and
+        area_spread <= STABILITY_AREA_JITTER
+    )
+
+    if not stable:
+        return False, len(relevant), metrics
+
+    return True, len(relevant), metrics
 
 # ──────────────────────────────────────────────────────────────────────────────
 # YOLO
@@ -326,9 +462,20 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
                 if text:
                     break
 
-            fields[f"clinic_{idx}"] = text
-            if text:
-                clinics_in_order.append(text)
+            clean_text = sanitize_ocr_text(text)
+            match_name, match_score = fuzzy_match_location(clean_text)
+
+            fields[f"clinic_{idx}"] = {
+                "raw": text,
+                "clean": clean_text,
+                "match": match_name,
+                "match_score": round(match_score, 4),
+            }
+
+            if match_name:
+                clinics_in_order.append(match_name)
+            elif clean_text:
+                clinics_in_order.append(clean_text)
 
     result = {
         "capture_id": ts,
@@ -366,9 +513,24 @@ async def run_ocr():
         "yolo": {"class": "slip_1", "conf": 0.99, "box": [12, 34, 200, 320]},
         "clinics": ["Ward 2", "Orthopaedic Centre", "Clinic J"],
         "fields": {
-            "clinic_1": "Ward 2",
-            "clinic_2": "Orthopaedic Centre",
-            "clinic_3": "Clinic J",
+            "clinic_1": {
+                "raw": "Ward 2",
+                "clean": "Ward 2",
+                "match": "Ward 2",
+                "match_score": 1.0,
+            },
+            "clinic_2": {
+                "raw": "Orthopaedic Centre",
+                "clean": "Orthopaedic Centre",
+                "match": "Orthopaedic Centre",
+                "match_score": 1.0,
+            },
+            "clinic_3": {
+                "raw": "Clinic J",
+                "clean": "Clinic J",
+                "match": "Clinic J",
+                "match_score": 1.0,
+            },
         },
         "outputs": {
             "overlay": "/data/ocr_latest/frames/demo-capture.template_overlay.jpg",
@@ -407,10 +569,12 @@ def _render_stream_frame():
             raise RuntimeError("Failed to read from USB camera")
         # frame is BGR
 
-    if ROTATE_STREAM_180:
-        frame = cv2.rotate(frame, cv2.ROTATE_180)
+    if ROTATE_STREAM_90 and ROTATE_STREAM_180:
+        log.warning("Both ROTATE_STREAM_90 and ROTATE_STREAM_180 enabled; applying single 90-degree rotation.")
     if ROTATE_STREAM_90:
         frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    elif ROTATE_STREAM_180:
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
 
     # Run detection every N frames on a downsized copy; rescale boxes back
     if yolo_model is not None and (_frame_idx % STREAM_DET_INTERVAL == 0):
@@ -426,12 +590,19 @@ def _render_stream_frame():
 
     _frame_idx += 1
 
+    now = time.time()
     best_conf = 0.0
     best_det = None
+    is_stable = False
+    stability_metrics = {"samples": 0, "center_jitter": None, "area_spread": None, "min_conf": None}
+
     if _last_boxes:
         best_det = max(_last_boxes, key=lambda b: b[4])
         best_conf = best_det[4]
         frame = _draw_boxes(frame, _last_boxes, (0, 255, 0))
+        is_stable, _, stability_metrics = _update_detection_stability(best_det, frame.shape, now)
+    else:
+        is_stable, _, stability_metrics = _update_detection_stability(None, None, now)
 
     cv2.putText(
         frame,
@@ -440,17 +611,56 @@ def _render_stream_frame():
         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2,
     )
 
+    stab_parts = [f"stb:{stability_metrics.get('samples', 0)}/{STABILITY_MIN_FRAMES}"]
+    if stability_metrics.get("min_conf") is not None:
+        stab_parts.append(f"mc:{stability_metrics['min_conf']*100:.0f}%")
+    if stability_metrics.get("center_jitter") is not None:
+        stab_parts.append(f"jit:{stability_metrics['center_jitter']*100:.1f}%")
+    if stability_metrics.get("area_spread") is not None:
+        stab_parts.append(f"area:{stability_metrics['area_spread']*100:.1f}%")
+    if is_stable:
+        stab_parts.append("OK")
+    cv2.putText(
+        frame,
+        " ".join(stab_parts),
+        (10, 50),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 255, 0) if is_stable else (255, 255, 0), 2,
+    )
+
     # Time-gated OCR (by seconds), not every frame
-    now = time.time()
-    if best_det and best_conf >= OCR_MIN_CONF and (now - _last_ocr_time) >= OCR_COOLDOWN_SEC:
+    can_run_ocr = (
+        best_det
+        and best_conf >= OCR_MIN_CONF
+        and is_stable
+        and (now - _last_ocr_time) >= OCR_COOLDOWN_SEC
+    )
+
+    if can_run_ocr:
         try:
             _ = _run_ocr_on_detection(frame.copy(), best_det, best_det[5])
             _last_ocr_time = now
-            cv2.putText(frame, "OCR OK", (10, 50),
+            cv2.putText(frame, "OCR OK", (10, 75),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         except Exception as e:
-            cv2.putText(frame, f"OCR ERR: {str(e)[:28]}", (10, 50),
+            cv2.putText(frame, f"OCR ERR: {str(e)[:28]}", (10, 75),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+    elif best_det and best_conf >= OCR_MIN_CONF:
+        wait_reasons = []
+        if not is_stable:
+            wait_reasons.append("stabilising")
+        cooldown_remaining = OCR_COOLDOWN_SEC - (now - _last_ocr_time)
+        if cooldown_remaining > 0:
+            wait_reasons.append(f"cooldown:{cooldown_remaining:.1f}s")
+        if wait_reasons:
+            cv2.putText(
+                frame,
+                f"OCR WAIT ({', '.join(wait_reasons)})",
+                (10, 75),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 215, 255),
+                2,
+            )
 
     # Pace the stream output to a fixed FPS to avoid burstiness
     t_now = time.time()
@@ -462,7 +672,8 @@ def _render_stream_frame():
     _render_stream_frame._last_t = time.time()
 
     # Encode MJPEG chunk
-    ok, jpeg = cv2.imencode(".jpg", frame)
+    encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), STREAM_JPEG_QUALITY]
+    ok, jpeg = cv2.imencode(".jpg", frame, encode_params)
     if not ok:
         raise RuntimeError("JPEG encode failed")
     return (
