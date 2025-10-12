@@ -30,8 +30,7 @@ const RfidScreen: React.FC = () => {
     const { t } = useTranslation();
     const { send } = useWebSocket();
     const searchParams = useSearchParams();
-    const [dispensing, setDispensing] = useState(true);
-
+    const [dispensing, setDispensing] = useState(false);
     const dest = searchParams.get("dest");
     const baseUrl = resolveRfidBase();
 
