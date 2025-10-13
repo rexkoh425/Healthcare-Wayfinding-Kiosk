@@ -4,7 +4,7 @@ import os, time, json, traceback, glob, asyncio
 from threading import Lock
 from pathlib import Path
 from datetime import datetime
-
+# This is for PI camera
 import cv2
 import numpy as np
 import pytesseract

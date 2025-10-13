@@ -41,7 +41,7 @@ log.debug("ocr logger ready")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api import ocr_v1
+from api import ocr
 
 app = FastAPI()
 
@@ -58,5 +58,5 @@ app.add_middleware(
 async def _startup():
     log.info("startup event fired")
 
-app.include_router(ocr_v1.router)
+app.include_router(ocr.router)
 

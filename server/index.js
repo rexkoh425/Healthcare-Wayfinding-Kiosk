@@ -32,6 +32,16 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    // Forward subtitle to hologram clients
+    if (msg.type === "subtitle" && typeof msg.text === "string") {
+      for (const [client, r] of clientRoles.entries()) {
+        if (r === "hologram" && client.readyState === WebSocket.OPEN) {
+          sendSafe(client, { type: "subtitle", text: msg.text });
+        }
+      }
+      return;
+    }
+
     // actions from touchscreen
     if (msg.type === "action" && typeof msg.action === "string") {
       const role = clientRoles.get(ws) || "unknown";
@@ -47,7 +57,9 @@ wss.on("connection", (ws) => {
       for (const [client, r] of clientRoles.entries()) {
         if (r === "hologram" && client.readyState === WebSocket.OPEN) {
           if (msg.action === "talk") {
-            sendSafe(client, { type: "set", video: "fgh.mp4", reason: "talk" });
+            sendSafe(client, { type: "set", video: "listen.mp4", reason: "talk" });
+          } else if (msg.action === "hear") {
+            sendSafe(client, { type: "set", video: "reply.mp4", reason: "hear" });
           } else if (msg.action === "idle") {
             sendSafe(client, { type: "set", video: "wave.mp4", reason: "idle" });
           } else {

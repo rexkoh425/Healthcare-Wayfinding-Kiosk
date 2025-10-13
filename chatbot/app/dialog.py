@@ -18,7 +18,7 @@ from .asr_router import AsrOut, transcribe_audio_bytes
 from .settings import settings
 
 
-from .tts_router import synthesize_wav
+from .tts_router import router as tts_router, synthesize_wav
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -34,6 +34,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(tts_router)
 
 # ---------- Models ----------
 class Msg(BaseModel):
