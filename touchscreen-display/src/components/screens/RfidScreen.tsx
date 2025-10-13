@@ -7,6 +7,36 @@ import useWebSocket from "@/lib/useWebSocket";
 import { MedicalIcon, MedicalIconType } from "@/components/ui/MedicalIcons";
 import Image from "next/image";
 
+const VIDEO_PATH = "/rfid/collectionGuide.mp4";
+
+function resolveRfidBase(): string {
+  // Optional: use environment variable first
+  const env = process.env.NEXT_PUBLIC_BASE_URL;
+  if (env) return env.replace(/\/$/, "");
+
+  // Fallback: browser environment
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "https" : "http";
+    const host = window.location.hostname;
+    return `${protocol}://${host}`;
+  }
+
+  // Server-side fallback
+  return "";
+}
+
+function resolveRfidReaderUrl(): string {
+  const env = process.env.NEXT_PUBLIC_RFID_URL;
+  if (env) return env;
+
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "https" : "http";
+    const host = window.location.hostname;
+    return `${protocol}://${host}:5000`;
+  }
+
+  return "";
+}
 interface InstructionRecord {
     location: string;
     directions: string;
@@ -37,6 +67,7 @@ const RfidScreen: React.FC = () => {
     const audioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
 
     const dest = searchParams.get("dest");
+    const baseUrl = resolveRfidBase();
 
     useEffect(() => {
         if (!dest) {
@@ -155,15 +186,19 @@ const RfidScreen: React.FC = () => {
         async function handleTags() {
             try {
                 // 1️⃣ GET request
-                console.log("request rfid reader")
-                const espRes = await fetch("https://192.168.99.54:5000"); // ESP32 endpoint
+                const rfidUrl = resolveRfidReaderUrl();
+                if (!rfidUrl) throw new Error("RFID reader URL is not configured.");
+                console.log("Requesting RFID reader at:", rfidUrl);
+                const espRes = await fetch(rfidUrl);
                 if (!espRes.ok) throw new Error(`HTTP error from rfid! status: ${espRes.status}`);
 
-                const tagData = await espRes.json(); // assuming ESP32 returns JSON
+                const tagData = await espRes.json();
                 console.log("Received from RFID Reader:", tagData);
 
                 // 2️⃣ POST request to user/backend
-                const postRes = await fetch("http://localhost:8000/users/", {
+                const usersUrl = `${baseUrl}/users/`;
+                console.log("Posting to Users", usersUrl);
+                const postRes = await fetch(usersUrl, {
                     method: "POST",
                     headers: {
                     "Content-Type": "application/json",
@@ -189,6 +224,22 @@ const RfidScreen: React.FC = () => {
         }
         handleTags();
     }, []);
+
+    useEffect(() => {
+        // Only start the timer when the collection screen is visible (`dispensing` is false)
+        if (!dispensing) {
+            const inactivityTimer = setTimeout(() => {
+                console.log('Timeout: User collect sticker. Navigating home.');
+                // Navigate back to the main page after 15 seconds
+                router.push('/');
+            }, 15000); // 15000 milliseconds = 15 seconds
+
+            //Cleanup function to clear timer 
+            return () => {
+                clearTimeout(inactivityTimer);
+            };
+        }
+    }, [dispensing, router]); 
 
   // when user clicks the Back Button
   const handleBack = () => {
@@ -252,18 +303,33 @@ const RfidScreen: React.FC = () => {
         <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
         <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
             <div>
-                <p className="text-3xl font-bold text-hospital-blue-gray">Please Collect your Sticker </p>
-                <p className="text-3xl font-bold text-hospital-blue-gray">And stick it vertically on your pants</p>
+                <p className="text-3xl font-bold text-hospital-blue-gray">Please Collect Your Sticker </p>
+                <p className="text-3xl font-bold text-hospital-blue-gray">& Stick It Vertically on Your Pants</p>
             </div>
-            <div className="flex items-center justify-center w-80 p-4 rounded-xl mx-auto">
+            <div className="flex items-center justify-center w-80 gap-8 p-4 rounded-xl mx-auto">
+                <div className="w-1/2 overflow-hidden rounded-lg bg-black">
+                <video
+                    src={VIDEO_PATH}
+                    className="w-full h-full object-cover rounded-lg rotate-180"
+                    autoPlay
+                    loop
+                    muted
+                    playsInline // Ensures it plays on mobile devices
+                    width={300}
+                    height={200}
+                ></video>
+                </div>
+
                 <Image
                     src="/rfid/wearGuide.jpg" // put your jpg inside /public folder
                     alt="RFID Wear Guide"
                     width={300}
                     height={200}
-                    className="rounded-lg object-contain"
+                    className="rounded-lg object-contain w-1/2 h-auto"
                 />
             </div>
+
+
 
             <div className="flex justify-between">
                 <Button

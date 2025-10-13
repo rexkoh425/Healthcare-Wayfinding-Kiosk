@@ -128,3 +128,45 @@ To view how the app will look like in your browser with the dimensions of an iPa
 1. Go to Developer Tools
 2. Select iPad Mini under Dimensions
 3. Rotate the screen such that it becomes landscape
+
+## RFID
+
+Setup
+```bash
+cd rfid
+sudo apt update
+sudo apt install python3-evdev
+python3 -m venv .venv --system-site-packages
+source .venv/bin/activate
+pip install -r requirements.txt
+sudo .venv/bin/python rfidv1.py
+```
+
+To find the RFID device info:
+```bash
+cat /proc/bus/input/devices
+```
+Should look something like this 
+```bash
+I: Bus=0003 Vendor=ffff Product=0035 Version=0110
+N: Name="ARM CM0 USB HID Keyboard"
+P: Phys=usb-xhci-hcd.0-2/input0
+S: Sysfs=/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-2/1-2:1.0/0003:FFFF:0035.0001/input/input1
+...
+```
+
+Running Docker File 
+```bash
+docker build -t rfidimage .
+docker run --rm \
+    -p 5000:5000 \
+    --device /dev/input/event1:/dev/input/event1 \
+    rfidimage
+```
+
+
+## Clearing Space in Rpi 
+```bash
+docker compose up --build #build the docker image
+docker builder prune --filter "until=2h" #removes previous docker images
+```
