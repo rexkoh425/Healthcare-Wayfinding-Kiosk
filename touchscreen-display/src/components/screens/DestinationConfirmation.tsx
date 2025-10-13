@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface DestinationConfirmationProps {
   locations?: string[];
-  onRestart: () => void;
+  onRestart?: () => void;
   targetPath?: string;
 }
 
@@ -19,6 +19,7 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
   const router = useRouter();
   const params = useSearchParams();
   const [submitting, setSubmitting] = useState(false);
+  const [selectedDestination, setSelectedDestination] = useState("");
 
   const paramsString = params.toString();
 
@@ -71,39 +72,59 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
 
     // Dedupe while preserving order
     const seen = new Set<string>();
-    return collected.filter((item) => {
+    const deduped = collected.filter((item) => {
       if (seen.has(item)) {
         return false;
       }
       seen.add(item);
       return true;
     });
+    return deduped.slice(0, 3);
   }, [locations, paramsString]);
 
-  const finalDestination = destinations.length > 0 ? destinations[destinations.length - 1] : "";
+  useEffect(() => {
+    setSelectedDestination((prev) => {
+      if (destinations.length === 0) {
+        return "";
+      }
+      if (prev && destinations.includes(prev)) {
+        return prev;
+      }
+      return destinations[destinations.length - 1];
+    });
+  }, [destinations]);
 
-  const handleConfirm = () => {
-    if (!finalDestination) {
-      alert("No destination selected. Please restart the scan.");
+  const handleDestinationSelect = (destination: string) => {
+    if (!destination || submitting) {
       return;
     }
+
+    setSelectedDestination(destination);
     setSubmitting(true);
+
     try {
       const nextParams = new URLSearchParams(paramsString);
       ["route", "dest", "destination", "locations", "from", "to"].forEach((key) => {
         nextParams.delete(key);
       });
 
-      nextParams.append("dest", finalDestination);
-
+      nextParams.append("dest", destination);
       const query = nextParams.toString();
       router.push(query ? `${targetPath}?${query}` : targetPath);
     } catch (error) {
       console.error("Failed to prepare route", error);
       alert("Failed to prepare route. Please try again.");
-    } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleRestart = () => {
+    if (submitting) {
+      return;
+    }
+    onRestart?.();
+    router.replace("/");
+    router.refresh();
   };
 
   return (
@@ -115,28 +136,30 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
           <p>No destinations detected.</p>
         ) : (
           <ul className="mb-8 space-y-2">
-            {destinations.map((location) => (
-              <li
-                key={location}
-                className={`text-lg ${
-                  location === finalDestination ? "font-semibold text-hospital-teal" : ""
-                }`}
-              >
-                {location}
-              </li>
-            ))}
+            {destinations.map((location) => {
+              const isSelected = location === selectedDestination;
+              return (
+                <li key={location}>
+                  <button
+                    type="button"
+                    onClick={() => handleDestinationSelect(location)}
+                    disabled={submitting}
+                    className={`w-full rounded-md border px-4 py-3 text-lg transition ${
+                      isSelected
+                        ? "border-hospital-teal bg-hospital-teal/10 text-hospital-teal"
+                        : "border-gray-300 hover:border-hospital-teal hover:bg-hospital-teal/5"
+                    }`}
+                  >
+                    {location}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
 
-        <div className="flex justify-center gap-4">
-          <Button
-            onClick={handleConfirm}
-            disabled={destinations.length === 0 || submitting}
-            className="bg-hospital-teal text-white"
-          >
-            {submitting ? "Preparing..." : "Confirm"}
-          </Button>
-          <Button variant="ghost" onClick={onRestart} disabled={submitting}>
+        <div className="flex justify-center">
+          <Button variant="ghost" onClick={handleRestart} disabled={submitting}>
             Restart
           </Button>
         </div>

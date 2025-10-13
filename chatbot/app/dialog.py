@@ -18,7 +18,7 @@ from .asr_router import AsrOut, transcribe_audio_bytes
 from .settings import settings
 
 
-from .tts_router import synthesize_wav
+from .tts_router import router as tts_router, synthesize_wav
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -34,6 +34,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(tts_router)
 
 # ---------- Models ----------
 class Msg(BaseModel):
@@ -58,6 +59,26 @@ class TalkVoiceOut(BaseModel):
     transcript_language: Optional[str] = None
     llm: LlmOut
     audio_wav_b64: Optional[str] = None
+
+
+def _format_locations_for_prompt(locations: List[str]) -> str:
+    cleaned = [loc.strip() for loc in locations if isinstance(loc, str) and loc.strip()]
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    if len(cleaned) == 2:
+        return f"{cleaned[0]} or {cleaned[1]}"
+    return ", ".join(cleaned[:-1]) + f", or {cleaned[-1]}"
+
+
+def _build_tts_response_text(llm_out: LlmOut) -> str:
+    if llm_out.locations:
+        location_phrase = _format_locations_for_prompt(llm_out.locations)
+        if location_phrase:
+            return f"Can I confirm you want to go to {location_phrase}?"
+    base = (llm_out.response_text or "").strip()
+    return base or "Okay."
 
 
 # Accepted ASR language codes (mirrors faster-whisper)
@@ -119,6 +140,9 @@ When intent="route", determine the top THREE most likely destinations the user w
 - Diagnostic Imaging 2
 - X-ray
 - Eye Center
+- Ward 2
+- Orthopaedic Centre
+- ICU 1
 
 If the user refers to a clinic letter in any form (e.g. "clinic e", "klinick ee"), normalise it to the correct "Clinic <Letter>" entry. Remove duplicates and return the top three distinct destinations (or fewer if you are unsure). If you truly cannot decide, set ask_clarification=true and craft a clarifying response.
 
@@ -334,7 +358,17 @@ async def talk_voice(
 
         logger.info("Calling LLM with transcript=%s", user_text[:200])
         talk_out = _invoke_llm(user_text, history_items)
-        response_text = talk_out.llm.response_text or "Okay."
+        response_text = _build_tts_response_text(talk_out.llm)
+        if response_text != talk_out.llm.response_text:
+            try:
+                talk_out.llm.response_text = response_text
+            except (TypeError, ValueError, AttributeError):
+                if hasattr(talk_out.llm, "model_dump"):
+                    llm_payload = talk_out.llm.model_dump()
+                else:
+                    llm_payload = talk_out.llm.dict()
+                llm_payload["response_text"] = response_text
+                talk_out = TalkOut(llm=LlmOut(**llm_payload))
         logger.info(
             "Generating TTS intent=%s response_preview=%s return_mode=%s",
             talk_out.llm.intent,

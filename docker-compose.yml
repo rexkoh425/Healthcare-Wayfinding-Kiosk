@@ -58,48 +58,62 @@ services:
       - "3443:443"
     volumes:
       - ./hologram-display:/usr/share/nginx/html:ro
-
-  rfid:
-    build:
-      context: ./rfid
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./rfid:/app
       - /etc/ssl/eic:/certs:ro
-    command: python rfid.py
-    stdin_open: true   # equivalent to -i
-    tty: true          # equivalent to -t
+
+  # rfid:
+  #   build:
+  #     context: ./rfid
+  #   ports:
+  #     - "5000:5000"
+  #   volumes:
+  #     - ./rfid:/app
+  #     - /etc/ssl/eic:/certs:ro
+  #   command: python rfid.py
+  #   stdin_open: true   # equivalent to -i
+  #   tty: true          # equivalent to -t
 
   ocr:
     build:
       context: ./ocr-service
       dockerfile: Dockerfile
     container_name: eic-ocr
-    privileged: true
+
+    # USB cam does NOT need privileged
+    # privileged: true
+
     devices:
-      - /dev/vchiq:/dev/vchiq
       - /dev/video0:/dev/video0
       - /dev/video1:/dev/video1
-      - /dev/media0:/dev/media0
-      - /dev/vcsm:/dev/vcsm
+
+    # Optional but useful: give container access to the "video" group
+    group_add:
+      - video
+
     volumes:
       - ./ocr-service:/app
-      - /run/udev:/run/udev:ro
+      - /run/udev:/run/udev:ro            # ok to keep for hotplug info
       - /home/rex/ocr_latest:/data/ocr_latest
       - /etc/ssl/eic:/certs:ro
+
     environment:
-      PICAMERA2_TEST_ENV: 1
       PYTHONUNBUFFERED: 1
       YOLO_CONFIG_DIR: /app/.ultralytics
+      CAMERA_ENABLED: "1"
+      USB_DEVICE_INDEX: "0"               # change to 1/2 if needed
+      USB_WIDTH: "1280"
+      USB_HEIGHT: "720"
+      USB_FPS: "30"
+
     command: >
       python3 -m uvicorn service:app
       --host 0.0.0.0
       --port 9000
       --log-level debug
+
     expose:
       - "9000"
     restart: unless-stopped
+
 
   chatbot-backend:
     build:

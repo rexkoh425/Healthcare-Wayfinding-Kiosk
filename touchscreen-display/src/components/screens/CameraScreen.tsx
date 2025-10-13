@@ -120,7 +120,8 @@ const CameraScreen: React.FC = () => {
     }
     setStreamUrl("");
     send({ type: "action", action: "idle" });
-    router.push("/");
+    router.replace("/");
+    router.refresh();
   };
 
   return (

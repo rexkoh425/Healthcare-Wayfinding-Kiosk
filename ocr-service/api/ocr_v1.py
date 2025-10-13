@@ -4,7 +4,7 @@ import os, time, json, traceback, glob, asyncio
 from threading import Lock
 from pathlib import Path
 from datetime import datetime
-
+# This is for PI camera
 import cv2
 import numpy as np
 import pytesseract
@@ -47,6 +47,7 @@ _last_ocr_time = 0.0
 
 _latest_result = None
 _latest_result_ts = 0.0
+CAMERA_ENABLED = os.environ.get("CAMERA_ENABLED", "0") == "1"
 
 
 log = logging.getLogger(__name__)
@@ -73,6 +74,9 @@ _camera_started = False
 def _ensure_camera_started() -> Picamera2:
     """Initialise and start the camera lazily, retrying once on failure."""
     global picam, vid_config, pic_config, _camera_started
+
+    if not CAMERA_ENABLED:
+        raise HTTPException(status_code=503, detail="Camera disabled")
 
     with _camera_init_lock:
         if picam is None:
@@ -289,6 +293,7 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
     result = {
         "capture_id": ts,
         "yolo": {"class": cls_name, "conf": float(det[4]), "box": [x1,y1,x2,y2]},
+        "locations": clinics_in_order,
         "clinics": clinics_in_order,
         "fields": fields,
         "outputs": {
@@ -303,9 +308,9 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
     # publish latest result for frontend polling
     global _latest_result, _latest_result_ts
     _latest_result = {
-        "locations": clinics_in_order,   # important: frontend expects locations
+        "locations": result.get("locations", []),   # important: frontend expects locations
         "yolo": result["yolo"],
-        "capture_id": ts,
+        "capture_id": result["capture_id"],
     }
     _latest_result_ts = time.time()
 
@@ -320,15 +325,28 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
 @router.post("/ocr")
 async def run_ocr():
     result = {
-        "capture_id": 1,
-        "yolo": {"class": 1, "conf": 1, "box": [1,3]},
-        "clinics": [1],
-        "fields": [1],
+        "capture_id": "demo-capture",
+        "locations": ["Ward 2", "Orthopaedic Centre", "Clinic J"],
+        "yolo": {"class": "slip_1", "conf": 0.99, "box": [12, 34, 200, 320]},
+        "clinics": ["Ward 2", "Orthopaedic Centre", "Clinic J"],
+        "fields": {
+            "clinic_1": "Ward 2",
+            "clinic_2": "Orthopaedic Centre",
+            "clinic_3": "Clinic J",
+        },
         "outputs": {
-            "overlay": 1,
-            "crops_dir": 1
-        }
+            "overlay": "/data/ocr_latest/frames/demo-capture.template_overlay.jpg",
+            "crops_dir": "/data/ocr_latest/frames"
+        },
     }
+
+    global _latest_result, _latest_result_ts
+    _latest_result = {
+        "locations": result["locations"],
+        "yolo": result["yolo"],
+        "capture_id": result["capture_id"],
+    }
+    _latest_result_ts = time.time()
 
     return JSONResponse(content=result)
 
@@ -336,6 +354,9 @@ async def run_ocr():
 def _render_stream_frame():
     """Capture, annotate, and encode a single frame for the MJPEG stream."""
     global _last_boxes, _frame_idx, _last_ocr_time
+
+    if not CAMERA_ENABLED:
+        raise RuntimeError("Camera disabled")
 
     camera = _ensure_camera_started()
 
@@ -396,6 +417,9 @@ def _render_stream_frame():
 
 @router.get("/stream.mjpg")
 async def stream(request: Request):
+    if not CAMERA_ENABLED:
+        raise HTTPException(status_code=503, detail="Camera livestream disabled")
+
     async def generate():
         log.error("running stream")
         try:
