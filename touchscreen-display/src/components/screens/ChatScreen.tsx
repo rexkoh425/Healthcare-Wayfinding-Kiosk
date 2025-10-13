@@ -24,7 +24,7 @@ function resolveChatBase(): string {
 
 const ChatScreen: React.FC = () => {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { send } = useWebSocket();
 
   const [status, setStatus] = useState<Status>("idle");
@@ -99,6 +99,7 @@ const ChatScreen: React.FC = () => {
         formData.append("audio", blob, "speech.webm");
         formData.append("session_id", SESSION_ID);
         formData.append("return_mode", "json");
+        formData.append("language", i18n.language || "en");
 
         try {
           const response = await fetch(`${apiBase}/talk-voice`, {
