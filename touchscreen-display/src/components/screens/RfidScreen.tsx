@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -37,15 +37,150 @@ function resolveRfidReaderUrl(): string {
 
   return "";
 }
+interface InstructionRecord {
+    location: string;
+    directions: string;
+    code?: string;
+    level?: string;
+}
+
+
+function resolveTtsBase(): string {
+    const env = process.env.NEXT_PUBLIC_CHATBOT_API_BASE;
+    if (env) {
+        return env.replace(/\/$/, "");
+    }
+    if (typeof window === "undefined") {
+        return "";
+    }
+    const protocol = window.location.protocol === "https:" ? "https" : "http";
+    return `${protocol}://${window.location.hostname}:8001`;
+}
+
 
 const RfidScreen: React.FC = () => {
     const router = useRouter();
     const { t } = useTranslation();
     const { send } = useWebSocket();
     const searchParams = useSearchParams();
-    const [dispensing, setDispensing] = useState(false);
+    const [dispensing, setDispensing] = useState(true);
+    const audioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
+
     const dest = searchParams.get("dest");
     const baseUrl = resolveRfidBase();
+
+    useEffect(() => {
+        if (!dest) {
+            return;
+        }
+
+        let isCancelled = false;
+
+        const fetchAndSpeak = async () => {
+            try {
+                const response = await fetch("/instructions.json", { cache: "no-store" });
+                if (!response.ok) {
+                    throw new Error(`Failed to load instructions: ${response.status}`);
+                }
+
+                const payload = await response.json();
+                if (!Array.isArray(payload)) {
+                    throw new Error("Invalid instructions payload");
+                }
+
+                const instructions = payload.filter(
+                    (item: any): item is InstructionRecord =>
+                        typeof item?.location === "string" && typeof item?.directions === "string",
+                );
+
+                const normalized = dest.trim().toLowerCase();
+                const match = instructions.find((item) => item.location.trim().toLowerCase() === normalized && item.directions.trim().length > 0);
+
+                if (!match) {
+                    console.warn("No matching instructions found for destination:", dest);
+                    return;
+                }
+
+                if (isCancelled) {
+                    return;
+                }
+
+                const directions: string = match.directions.trim();
+                const apiBase = resolveTtsBase();
+                if (!apiBase) {
+                    console.warn("Unable to resolve TTS base URL");
+                    return;
+                }
+
+                const ttsResponse = await fetch(`${apiBase}/speak`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        text: directions,
+                        return_mode: "json",
+                    }),
+                });
+
+                if (!ttsResponse.ok) {
+                    throw new Error(`TTS request failed: ${ttsResponse.status}`);
+                }
+
+                const ttsPayload = await ttsResponse.json();
+                const b64 = typeof ttsPayload?.audio_wav_b64 === "string" ? ttsPayload.audio_wav_b64.replace(/\s+/g, "") : "";
+                if (!b64) {
+                    throw new Error("Missing audio payload from TTS response");
+                }
+
+                if (isCancelled) {
+                    return;
+                }
+
+                const binary = window.atob(b64);
+                const buffer = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i += 1) {
+                    buffer[i] = binary.charCodeAt(i);
+                }
+                const blob = new Blob([buffer], { type: "audio/wav" });
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                audioRef.current = { audio, url };
+
+                const cleanup = () => {
+                    if (audioRef.current?.audio === audio) {
+                        audioRef.current = null;
+                    }
+                    URL.revokeObjectURL(url);
+                };
+
+                audio.onended = cleanup;
+                audio.onerror = cleanup;
+
+                try {
+                    await audio.play();
+                } catch (playError) {
+                    cleanup();
+                    throw playError;
+                }
+            } catch (error) {
+                console.error("Failed to fetch and play instructions audio", error);
+            }
+        };
+
+        fetchAndSpeak();
+
+        return () => {
+            isCancelled = true;
+            const current = audioRef.current;
+            if (current) {
+                current.audio.pause();
+                current.audio.src = "";
+                URL.revokeObjectURL(current.url);
+                audioRef.current = null;
+            }
+        };
+    }, [dest]);
 
     useEffect(() => {
         async function handleTags() {
@@ -116,7 +251,8 @@ const RfidScreen: React.FC = () => {
     }
 
     // then navigate
-    router.push("/");
+    router.replace("/");
+    router.refresh();
   };
 
   const handleCollected = () => {
@@ -127,7 +263,8 @@ const RfidScreen: React.FC = () => {
       console.warn("Failed to send WS idle action", err);
     }
     // then navigate
-    router.push("/");
+    router.replace("/");
+    router.refresh();
   };
 
   if (dispensing) {

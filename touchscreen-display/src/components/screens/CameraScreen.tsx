@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useEffect, useRef, useState } from "react";
 import { Search, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +8,6 @@ import Spinner from "@/components/ui/Spinner";
 import useWebSocket from "@/lib/useWebSocket";
 
 const POLL_INTERVAL_MS = 500;
-const VIDEO_PATH = "/camera/scanreg.mp4";
 
 function resolveOcrBase(): string {
   const env = process.env.NEXT_PUBLIC_OCR_API_BASE;
@@ -123,46 +120,36 @@ const CameraScreen: React.FC = () => {
     }
     setStreamUrl("");
     send({ type: "action", action: "idle" });
-    router.push("/");
+    router.replace("/");
+    router.refresh();
   };
 
   return (
-    <div className="relative w-full flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
-      <Card className="w-full max-w-3xl p-8 text-center kiosk-card flex flex-col items-center">
-        {/* Instructional Video Container */}
-        <div className="ml-2 border rounded-lg shadow bg-white p-2 mr-auto">
-          <video
-            src={VIDEO_PATH}
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="w-[150px] h-[150px] object-cover"
-          />
+    <div className="relative flex flex-col items-center justify-center h-[85vh]">
+      <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
+        <div className="mb-8">
+          <div className="bg-hospital-teal/10 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+            <FileText size={48} className="text-hospital-teal" />
+          </div>
+          <p className="text-hospital-blue-gray/70 text-xl max-w-xl mx-auto">
+            {t("camera.description")}
+          </p>
         </div>
-        
-        {/* Camera Stream Container */}
-        <div className="mb-6 w-full max-w-2xl">
-          <div className="border rounded-lg overflow-hidden shadow flex justify-center items-center bg-black relative aspect-video">
-            {streamUrl && !loading ? (
+
+        {streamUrl && !loading && (
+          <div className="mb-8 flex justify-center">
+            <div className="border rounded-lg overflow-hidden shadow flex justify-center items-center max-h-[75vh] w-full max-w-2xl bg-black">
               <img
                 ref={streamImgRef}
                 src={streamUrl}
                 alt="Live camera stream"
-                className="w-full h-full object-contain"
+                className="max-h-[75vh] w-auto object-contain"
               />
-            ) : (
-              // Placeholder when stream is broken or we are not loading
-              !loading && (
-                <p className="text-white p-12 text-lg">
-                  {t("camera.streamUnavailable", "Camera feed unavailable or loading...")}
-                </p>
-              )
-            )}
-         </div>
-       </div>
-        
-        <div className="flex flex-col space-y-4 w-full max-w-sm">
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col space-y-4">
           <Button
             onClick={handleScan}
             size="lg"
@@ -180,7 +167,7 @@ const CameraScreen: React.FC = () => {
           </Button>
         </div>
 
-        <div className="w-full max-w-sm flex justify-start mr-auto">
+        <div className="flex justify-between mt-6">
           <Button
             onClick={handleBack}
             variant="ghost"
@@ -199,6 +186,6 @@ const CameraScreen: React.FC = () => {
       )}
     </div>
   );
-};  
+};
 
 export default CameraScreen;
