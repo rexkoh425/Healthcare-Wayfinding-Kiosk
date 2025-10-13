@@ -6,9 +6,6 @@ import time
 import logging
 # import usb.core
 # import usb.util
-import time
-
-
 # -----------------------
 # Logging Setup
 # -----------------------
