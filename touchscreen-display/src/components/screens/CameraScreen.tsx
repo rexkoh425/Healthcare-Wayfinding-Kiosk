@@ -51,9 +51,11 @@ const CameraScreen: React.FC = () => {
       return undefined;
     }
 
+    let active = true;
     let lastSeenTs: number | null = null;
+    let intervalId: number | null = null;
 
-    async function pollLatest() {
+    const pollLatest = async () => {
       try {
         const response = await fetch(`${apiBase}/latest_result`, { cache: "no-store" });
         if (!response.ok) {
@@ -75,13 +77,37 @@ const CameraScreen: React.FC = () => {
       } catch (error) {
         console.error("latest_result poll failed", error);
       }
-    }
+    };
 
-    pollLatest();
-    const id = window.setInterval(pollLatest, POLL_INTERVAL_MS);
+    const resetLatestResult = async () => {
+      try {
+        await fetch(`${apiBase}/latest_result/reset`, { method: "POST" });
+      } catch (error) {
+        console.warn("Failed to reset latest OCR result", error);
+      }
+    };
+
+    const startPolling = async () => {
+      await resetLatestResult();
+      if (!active) {
+        return;
+      }
+      await pollLatest();
+      if (!active) {
+        return;
+      }
+      intervalId = window.setInterval(pollLatest, POLL_INTERVAL_MS);
+    };
+
+    startPolling().catch((error) => {
+      console.error("Failed to start OCR polling", error);
+    });
 
     return () => {
-      window.clearInterval(id);
+      active = false;
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
     };
   }, [apiBase, router]);
 
@@ -120,6 +146,11 @@ const CameraScreen: React.FC = () => {
     }
     setStreamUrl("");
     send({ type: "action", action: "idle" });
+    if (apiBase) {
+      fetch(`${apiBase}/latest_result/reset`, { method: "POST" }).catch((error) => {
+        console.warn("Failed to reset latest OCR result on back", error);
+      });
+    }
     router.replace("/");
     router.refresh();
   };
