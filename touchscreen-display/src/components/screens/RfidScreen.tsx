@@ -77,6 +77,7 @@ const RfidScreen: React.FC = () => {
         let isCancelled = false;
 
         const fetchAndSpeak = async () => {
+            send({ type: "action", action: "hear" });
             try {
                 const response = await fetch("/instructions.json", { cache: "no-store" });
                 if (!response.ok) {
@@ -111,6 +112,8 @@ const RfidScreen: React.FC = () => {
                     console.warn("Unable to resolve TTS base URL");
                     return;
                 }
+
+                send({ type: "subtitle", text: directions });
 
                 const ttsResponse = await fetch(`${apiBase}/speak`, {
                     method: "POST",

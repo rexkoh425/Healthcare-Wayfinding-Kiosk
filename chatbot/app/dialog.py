@@ -172,7 +172,7 @@ def _coerce_json(s: str) -> Dict[str, Any]:
         return json.loads(m.group(0))
 
 
-def _invoke_llm(user_text: str, history: Optional[List[Msg]], language_code: str) -> TalkOut:
+def _invoke_llm(user_text: str, history: Optional[List[Msg]]) -> TalkOut:
     client = _get_gemini_client()
     prompt = SYSTEM_INSTRUCTIONS + "\n\n" + _build_user_message(user_text, history)
 
