@@ -41,7 +41,7 @@ ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "0") == "1"
 ROTATE_STREAM_90  = os.environ.get("ROTATE_STREAM_90",  "1") == "1"  # default True
 
 # OCR gating
-OCR_MIN_CONF      = 0.99     # 90%
+OCR_MIN_CONF      = 0.80     # 90%
 OCR_COOLDOWN_SEC  = 5
 _last_ocr_time    = 0.0
 
@@ -80,22 +80,22 @@ INTENSITY_MASK_CFG = {
 }
 
 SLIP_EXTRACT_CFG = {
-    "thr": 205,
+    "thr": 190,
     "use_adaptive": False,
     "adaptive_block": 37,
     "adaptive_C": -10,
     "morph_kernel": 10,
     "fill_kernel": 7,
     "open_kernel": 15,
-    "min_keep_area": 8000,
+    "min_keep_area": 4000,
     "use_white_filter": True,
-    "v_min": 160,
-    "s_max": 70,
+    "v_min": 130,
+    "s_max": 100,
     "post_white_margin": 10,
-    "target_white_ratio": 0.92,
+    "target_white_ratio": 0.85,
     "crop_margin": 0.03,
     "quad_expand_frac": 0.02,
-    "prefer_pad_on_white_fail": False,
+    "prefer_pad_on_white_fail": True,
     "inner_band_frac": 0.0,
 }
 
@@ -115,6 +115,13 @@ TEMPLATE_CROP_PAD = int(os.environ.get("TEMPLATE_CROP_PAD", "4"))
 
 TESSERACT_WIN_PATH = os.environ.get("TESSERACT_WIN_PATH", "")
 
+DEBUG_DUMP_DIR_ENV = os.environ.get("OCR_DEBUG_DUMP_DIR")
+if DEBUG_DUMP_DIR_ENV:
+    DEBUG_DUMP_DIR = Path(DEBUG_DUMP_DIR_ENV)
+    DEBUG_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+else:
+    DEBUG_DUMP_DIR = None
+
 def configure_tesseract(win_path: str, logger: logging.Logger):
     if pytesseract is None:
         logger.warning("pytesseract not available; OCR will be skipped.")
@@ -133,12 +140,16 @@ configure_tesseract(TESSERACT_WIN_PATH, log)
 # ──────────────────────────────────────────────────────────────────────────────
 # Location matching helpers
 # ──────────────────────────────────────────────────────────────────────────────
-LOCATION_CANDIDATES = [f"Clinic {chr(ord('A') + i)}" for i in range(26)] + [
-    "Cocoon Clinic",
-    "Diagnostic Imaging 2",
-    "X-ray",
-    "Eye Center",
-]
+LOCATION_CANDIDATES = (
+    [f"Clinic {chr(ord('A') + i)}" for i in range(26)]
+    + [f"Ward {i}" for i in range(1, 16)]
+    + [
+        "Cocoon Clinic",
+        "Diagnostic Imaging 2",
+        "X-ray",
+        "Eye Center",
+    ]
+)
 
 def sanitize_ocr_text(value: Optional[str]) -> str:
     if value is None:
@@ -418,9 +429,52 @@ def find_minrect_and_crop(
     extract_cfg=None,
 ):
     dbg = []
+
+    debug_dir: Optional[Path] = None
+
+    def _noop_debug_write(name: str, img: np.ndarray | None):
+        return
+
+    _debug_write = _noop_debug_write
+
+    def _write_debug_summary():
+        if debug_dir is None:
+            return
+        try:
+            summary = [[str(k), repr(v)] for (k, v) in dbg]
+            (debug_dir / "debug.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    if debug_prefix is not None:
+        try:
+            debug_dir = Path(debug_prefix)
+            debug_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            debug_dir = None
+        else:
+            def _debug_write(name: str, img: np.ndarray | None):
+                if img is None:
+                    return
+                try:
+                    arr = np.asarray(img)
+                    if arr.size == 0:
+                        return
+                    out_path = debug_dir / f"{name}.png"
+                    if arr.ndim == 2:
+                        cv2.imwrite(str(out_path), arr)
+                    else:
+                        cv2.imwrite(str(out_path), arr)
+                except Exception:
+                    pass
+
     if upright_bgr is None or upright_bgr.size == 0:
         dbg.append(("empty_input", True))
+        _debug_write("input_empty", upright_bgr)
+        _write_debug_summary()
         return None, dbg, None
+
+    _debug_write("input", upright_bgr)
 
     cfg = extract_cfg or {}
     thr = int(cfg.get("thr", 200))
@@ -473,6 +527,10 @@ def find_minrect_and_crop(
         if cv2.countNonZero(mask_raw) < max(100, int(min_ratio * h * w)):
             dbg.append(("intensity_skip", cv2.countNonZero(mask_raw)))
 
+    _debug_write("mask_raw", mask_raw)
+    if white_pref is not None:
+        _debug_write("mask_white_pref", white_pref)
+
     k = np.ones((morph_kernel, morph_kernel), np.uint8)
     mask = cv2.morphologyEx(mask_raw, cv2.MORPH_CLOSE, k)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k)
@@ -488,11 +546,16 @@ def find_minrect_and_crop(
     mask_clean = _largest_component_mask(mask, min_keep_area=min_keep_area)
     if mask_clean.max() == 0:
         dbg.append(("no_component", True))
+        _debug_write("mask_clean", mask_clean)
+        _write_debug_summary()
         return None, dbg, None
+
+    _debug_write("mask_clean", mask_clean)
 
     cnts, _ = cv2.findContours(mask_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     dbg.append(("contours", len(cnts)))
     if not cnts:
+        _write_debug_summary()
         return None, dbg, None
 
     img_area = float(h * w)
@@ -526,6 +589,7 @@ def find_minrect_and_crop(
 
     if best_rect is None:
         dbg.append(("rect_none", True))
+        _write_debug_summary()
         return None, dbg, None
 
     box = cv2.boxPoints(best_rect).astype('float32')
@@ -603,6 +667,8 @@ def find_minrect_and_crop(
     )
 
     if roi.size == 0:
+        _debug_write("roi_empty", roi)
+        _write_debug_summary()
         return None, dbg, None
 
     gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -647,6 +713,8 @@ def find_minrect_and_crop(
 
     dbg.append(("rect_size", (int(W), int(H))))
     dbg.append(("crop_wh", (roi.shape[1], roi.shape[0])))
+    _debug_write("roi", roi)
+    _write_debug_summary()
     return roi, dbg, dict(ordered=ordered, transform=P)
 # Template selection + crop
 # ──────────────────────────────────────────────────────────────────────────────
@@ -809,6 +877,8 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
     H, W = frame_bgr.shape[:2]
     x1, y1, x2, y2 = det[:4]
 
+    debug_stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%f")
+
     x1c, y1c, x2c, y2c = clip_box((x1, y1, x2, y2), W, H)
     ex1, ey1, ex2, ey2 = enlarge_box_by_scale((x1c, y1c, x2c, y2c), W, H)
     extra_top = int(0.05 * max(1, ey2 - ey1))
@@ -816,7 +886,53 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         ey1 = max(0, ey1 - extra_top)
     crop = frame_bgr[ey1:ey2, ex1:ex2].copy()
     if crop.size == 0:
+        if DEBUG_DUMP_DIR is not None:
+            try:
+                dump_dir = DEBUG_DUMP_DIR / f"frame{_frame_idx:06d}_empty_crop_{debug_stamp}"
+                dump_dir.mkdir(parents=True, exist_ok=True)
+                info = {
+                    "stage": "empty_crop",
+                    "frame_index": _frame_idx,
+                    "det_original": [float(v) for v in det[:4]],
+                    "det_conf": float(det[4]) if len(det) > 4 else None,
+                    "det_class": cls_name,
+                    "clip_box": [int(x1c), int(y1c), int(x2c), int(y2c)],
+                    "expanded_box": [int(ex1), int(ey1), int(ex2), int(ey2)],
+                }
+                (dump_dir / "meta.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
+            except Exception as dump_err:
+                log.warning("Failed to write OCR empty-crop debug dump: %s", dump_err)
         raise RuntimeError("Scaled crop for OCR is empty")
+
+    def _dump_rect_failure(stage: str, dbg_payload):
+        if DEBUG_DUMP_DIR is None:
+            return
+        try:
+            dump_dir = DEBUG_DUMP_DIR / f"frame{_frame_idx:06d}_{stage}_{debug_stamp}"
+            dump_dir.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(dump_dir / "crop.png"), crop)
+            try:
+                find_minrect_and_crop(
+                    crop,
+                    debug_prefix=dump_dir / "rect",
+                    intensity_cfg=INTENSITY_MASK_CFG,
+                    extract_cfg=SLIP_EXTRACT_CFG,
+                )
+            except Exception:
+                pass
+            info = {
+                "stage": stage,
+                "frame_index": _frame_idx,
+                "det_original": [float(v) for v in det[:4]],
+                "det_conf": float(det[4]) if len(det) > 4 else None,
+                "det_class": cls_name,
+                "clip_box": [int(x1c), int(y1c), int(x2c), int(y2c)],
+                "expanded_box": [int(ex1), int(ey1), int(ex2), int(ey2)],
+                "dbg": [[str(k), repr(v)] for (k, v) in (dbg_payload or [])],
+            }
+            (dump_dir / "meta.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
+        except Exception as dump_err:
+            log.warning("Failed to write OCR rect debug dump: %s", dump_err)
 
     rect_img, dbg, geom = find_minrect_and_crop(
         crop,
@@ -824,6 +940,7 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         extract_cfg=SLIP_EXTRACT_CFG,
     )
     if rect_img is None or rect_img.size == 0:
+        _dump_rect_failure("rect_not_found", dbg)
         raise RuntimeError("Rectified slip region not found in detection crop.")
 
     rect_w, rect_h = rect_img.shape[1], rect_img.shape[0]
@@ -921,6 +1038,14 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         "capture_id": result["capture_id"],
     }
     _latest_result_ts = time.time()
+    summary_fields = {name: data.get("clean") for name, data in fields.items()}
+    log.info(
+        "OCR capture_id=%s class=%s clinics=%s fields=%s",
+        result["capture_id"],
+        final_cls,
+        clinics_in_order,
+        summary_fields,
+    )
 
     return result
 # Routes
@@ -1133,6 +1258,13 @@ def latest_result():
     if _latest_result is None:
         return {"ready": False}
     return {"ready": True, "updated_at": _latest_result_ts, "data": _latest_result}
+
+@router.post("/latest_result/reset")
+def reset_latest_result():
+    global _latest_result, _latest_result_ts
+    _latest_result = None
+    _latest_result_ts = time.time()
+    return {"ok": True}
 
 @router.get("/health")
 def health():
