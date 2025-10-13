@@ -27,6 +27,7 @@ router = APIRouter(tags=["tts"])
 class TtsIn(BaseModel):
     text: str
     return_mode: str = "audio"  # "audio" | "json"
+    language: Optional[str] = "en"
 
 
 class TtsOut(BaseModel):

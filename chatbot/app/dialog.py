@@ -82,17 +82,7 @@ def _build_tts_response_text(llm_out: LlmOut) -> str:
 
 
 # Accepted ASR language codes (mirrors faster-whisper)
-_ASR_LANG_CODES = {
-    "af", "am", "ar", "as", "az", "ba", "be", "bg", "bn", "bo", "br", "bs",
-    "ca", "cs", "cy", "da", "de", "el", "en", "es", "et", "eu", "fa", "fi",
-    "fo", "fr", "gl", "gu", "ha", "haw", "he", "hi", "hr", "ht", "hu", "hy",
-    "id", "is", "it", "ja", "jw", "ka", "kk", "km", "kn", "ko", "la", "lb",
-    "ln", "lo", "lt", "lv", "mg", "mi", "mk", "ml", "mn", "mr", "ms", "mt",
-    "my", "ne", "nl", "nn", "no", "oc", "pa", "pl", "ps", "pt", "ro", "ru",
-    "sa", "sd", "si", "sk", "sl", "sn", "so", "sq", "sr", "su", "sv", "sw",
-    "ta", "te", "tg", "th", "tk", "tl", "tr", "tt", "uk", "ur", "uz", "vi",
-    "yi", "yo", "zh", "yue",
-}
+_ASR_LANG_CODES = {"en", "ms", "ta", "zh"}
 
 
 def _normalise_asr_language(lang: Optional[str]) -> Optional[str]:
@@ -155,7 +145,6 @@ Return STRICT JSON only:
   "repeat_request": true|false
 }"""
 
-
 def _format_history(history: Optional[List[Msg]]) -> str:
     if not history:
         return ""
@@ -183,7 +172,7 @@ def _coerce_json(s: str) -> Dict[str, Any]:
         return json.loads(m.group(0))
 
 
-def _invoke_llm(user_text: str, history: Optional[List[Msg]]) -> TalkOut:
+def _invoke_llm(user_text: str, history: Optional[List[Msg]], language_code: str) -> TalkOut:
     client = _get_gemini_client()
     prompt = SYSTEM_INSTRUCTIONS + "\n\n" + _build_user_message(user_text, history)
 
@@ -288,7 +277,7 @@ async def talk_voice(
     text: Optional[str] = Form(default=None),
     history: Optional[str] = Form(default=None),
     return_mode: str = Form("audio"),
-    language: Optional[str] = Form(default=None),
+    language: Optional[str] = Form(default="en"),
 ):
     history_items = _parse_history_form(history)
 
