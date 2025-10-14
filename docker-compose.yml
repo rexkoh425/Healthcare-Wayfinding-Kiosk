@@ -83,9 +83,13 @@ services:
 
     devices:
       - /dev/video0:/dev/video0
-      - /dev/video1:/dev/video1
-
-    # Optional but useful: give container access to the "video" group
+      - /dev/video1:/dev/video1           # keep if present; harmless if absent
+      - /dev/media0:/dev/media0
+      - /dev/media1:/dev/media1
+      - /dev/media2:/dev/media2
+      - /dev/media3:/dev/media3
+    privileged: true
+    
     group_add:
       - video
 
