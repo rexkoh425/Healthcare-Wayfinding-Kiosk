@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useRouter, useSearchParams } from "next/navigation";
+import useWebSocket from "@/lib/useWebSocket";
 
 interface DestinationConfirmationProps {
   locations?: string[];
@@ -18,6 +19,7 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
 }) => {
   const router = useRouter();
   const params = useSearchParams();
+  const { send } = useWebSocket();
   const [submitting, setSubmitting] = useState(false);
   const [selectedDestination, setSelectedDestination] = useState("");
 
@@ -104,12 +106,15 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
 
     try {
       const nextParams = new URLSearchParams(paramsString);
-      ["route", "dest", "destination", "locations", "from", "to"].forEach((key) => {
-        nextParams.delete(key);
-      });
+      ["route", "dest", "destination", "locations", "from", "to"].forEach(
+        (key) => {
+          nextParams.delete(key);
+        }
+      );
 
       nextParams.append("dest", destination);
       const query = nextParams.toString();
+      send({ type: "action", action: "hear" });
       router.push(query ? `${targetPath}?${query}` : targetPath);
     } catch (error) {
       console.error("Failed to prepare route", error);
@@ -119,6 +124,7 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
   };
 
   const handleRestart = () => {
+    send({ type: "action", action: "idle" });
     if (submitting) {
       return;
     }

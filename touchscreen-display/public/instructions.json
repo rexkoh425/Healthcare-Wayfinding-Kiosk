@@ -102,13 +102,13 @@
     "directions": "Got it! You are heading to Ward 7. You are currently at the main lobby. Please turn right and walk straight. Once you see Lift Lobby B, please take lift 3 or 4 to level 3. After exiting the lift, you will find Ward 7 on your left and right. And that is it, you have arrived at Ward 7. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
-    "location": "Care & Counselling",
+    "location": "Care and Counselling",
     "unit": "C01-02",
     "level": "1",
     "directions": "Got it! You are heading to Care & Counselling. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Look out for the glass door on your left and head through it to enter zone C. Once you see Eye Surgery Centre Registration Kiosk, continue walking straight, you are on the right track. Turn right at the stairs and take the lift to level 1. After exiting the lift, you will find Care & Counselling along the left hallway. And that is it, you have arrived at Care & Counselling. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
-    "location": "Ear, Nose & Throat Centre",
+    "location": "Ear, Nose and Throat Centre",
     "unit": "C01-01",
     "level": "1",
     "directions": "Got it! You are heading to Ear, Nose & Throat Centre. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Look out for the glass door on your left and head through it to enter zone C. Once you see Eye Surgery Centre Registration Kiosk, continue walking straight, you are on the right track. Turn right at the stairs and take the lift to level 1. After exiting the lift, turn left and continue walking straight. You'll find Ear, Nose & Throat Centre to your left. And that is it, you have arrived at Ear, Nose & Throat Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
@@ -141,13 +141,13 @@
     "location": "Endoscopy Centre",
     "unit": "D01-05",
     "level": "1",
-    "directions": "Got it! You are heading to Endoscopy Centre. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Once you see Lift Lobby D, continue walking straight, you are on the right track. Continue walking straight at the junction and you wll find Endoscopy Centre, right beside Ambulatory Surgery Centre. And that is it, you have arrived at Endoscopy Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "directions": "Got it! You are heading to Endoscopy Centre. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Once you see Lift Lobby D, continue walking straight, you are on the right track. Continue walking straight at the junction and you will find Endoscopy Centre, right beside Ambulatory Surgery Centre. And that is it, you have arrived at Endoscopy Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "NUCOHS Dental Clinic @ AH",
     "unit": "D01-01",
     "level": "1",
-    "directions": "Got it! You are heading to NUCOHS Dental Clinic. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Once you see Lift Lobby D, continue walking straight, you are on the right track. You will find UCOHS Dental Clinic @ AH on your left, right opposite Orthopaedic Centre. And that is it, you have arrived at NUCOHS Dental Clinic. The signboards along the way will guide you to your destination.We hope you find your way smoothly!"
+    "directions": "Got it! You are heading to NUCOHS Dental Clinic. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Once you see Lift Lobby D, continue walking straight, you are on the right track. You will find NUCOHS Dental Clinic @ AH on your left, right opposite Orthopaedic Centre. And that is it, you have arrived at NUCOHS Dental Clinic. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Orthopaedic Centre",

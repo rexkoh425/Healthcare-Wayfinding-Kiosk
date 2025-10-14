@@ -143,7 +143,6 @@ const RfidScreen: React.FC = () => {
           console.warn("Unable to resolve TTS base URL");
           return;
         }
-        send({ type: "subtitle", text: directions });
 
         const ttsResponse = await fetch(`${apiBase}/speak`, {
           method: "POST",
@@ -192,6 +191,7 @@ const RfidScreen: React.FC = () => {
         audio.onerror = cleanup;
 
         try {
+          send({ type: "subtitle", text: directions });
           await audio.play();
         } catch (playError) {
           cleanup();
@@ -268,6 +268,7 @@ const RfidScreen: React.FC = () => {
       const inactivityTimer = setTimeout(() => {
         console.log("Timeout: User collect sticker. Navigating home.");
         // Navigate back to the main page after 15 seconds
+        send({ type: "action", action: "idle" });
         router.push("/");
       }, 15000); // 15000 milliseconds = 15 seconds
 
@@ -277,20 +278,6 @@ const RfidScreen: React.FC = () => {
       };
     }
   }, [dispensing, router]);
-
-  // when user clicks the Back Button
-  const handleBack = () => {
-    // send action to server (touchscreen -> hologram)
-    try {
-      send({ type: "action", action: "idle" });
-    } catch (err) {
-      console.warn("Failed to send WS idle action", err);
-    }
-
-    // then navigate
-    router.replace("/");
-    router.refresh();
-  };
 
   const handleCollected = () => {
     // send action to server (touchscreen -> hologram)
@@ -388,13 +375,6 @@ const RfidScreen: React.FC = () => {
 
           <div className="flex justify-between">
             <Button
-              onClick={handleBack}
-              variant="ghost"
-              className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
-            >
-              {t("common.back")}
-            </Button>
-            <Button
               onClick={handleRepeat}
               variant="ghost"
               className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
@@ -459,13 +439,6 @@ const RfidScreen: React.FC = () => {
           </div>
 
           <div className="flex justify-between">
-            <Button
-              onClick={handleBack}
-              variant="ghost"
-              className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
-            >
-              {t("common.back")}
-            </Button>
             <Button
               onClick={handleRepeat}
               variant="ghost"
