@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     PIPER_VOICE: str = "en_US-amy-medium"
     PIPER_VOICE_PATH: str = "/voices/en_US-amy-medium.onnx"
     PIPER_BIN: str = "/usr/local/bin/piper"
+    PIPER_LENGTH_SCALE: float = 1.0
 
     # ---------- Validators & Normalizers ----------
 
