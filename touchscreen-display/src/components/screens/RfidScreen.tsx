@@ -53,7 +53,7 @@ function resolveTtsBase(): string {
 interface InstructionRecord {
   location: string;
   directions: string;
-  code?: string;
+  unit?: string;
   level?: string;
 }
 
