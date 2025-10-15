@@ -19,6 +19,7 @@ from .settings import settings
 
 
 from .tts_router import router as tts_router, synthesize_wav
+import csv
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -60,6 +61,28 @@ class TalkVoiceOut(BaseModel):
     llm: LlmOut
     audio_wav_b64: Optional[str] = None
 
+def load_destinations_from_csv(csv_file):
+    """
+    Load destinations from CSV file and format as Python list string.
+    CSV should have destinations in one column or comma-separated.
+    """
+    destinations = []
+    
+    with open(csv_file, 'r') as file:
+        reader = csv.reader(file)
+        next(reader)  # Skip header row
+        for row in reader:
+            if row:  # Skip empty rows
+                dest = row[0].strip()  # Get first column only
+                if dest:
+                    destinations.append(dest)
+    
+    sorted_destinations = destinations
+    
+    # Format as Python list string
+    python_string = "\n".join([f"- {dest}" for dest in destinations])
+    
+    return python_string
 
 def _format_locations_for_prompt(locations: List[str]) -> str:
     cleaned = [loc.strip() for loc in locations if isinstance(loc, str) and loc.strip()]
@@ -125,14 +148,11 @@ SYSTEM_INSTRUCTIONS = """You are a hospital kiosk assistant. Classify the user's
 4) "nonsense" if the input is not meaningful for this context
 
 When intent="route", determine the top THREE most likely destinations the user wants next (highest confidence first), using conversation history to resolve context and ignoring filler or noisy words. Every candidate must be mapped to the following canonical names only:
-- Clinic A, Clinic B, Clinic C, … up to Clinic Z (26 distinct locations; choose the matching letter)
-- Cocoon Clinic
-- Diagnostic Imaging 2
-- X-ray
-- Eye Center
-- Ward 2
-- Orthopaedic Centre
-- ICU 1
+"""
+
+SYSTEM_INSTRUCTIONS += load_destinations_from_csv("/data/directions.csv")
+
+SYSTEM_INSTRUCTIONS += """
 
 If the user refers to a clinic letter in any form (e.g. "clinic e", "klinick ee"), normalise it to the correct "Clinic <Letter>" entry. Remove duplicates and return the top three distinct destinations (or fewer if you are unsure). If you truly cannot decide, set ask_clarification=true and craft a clarifying response.
 
@@ -172,7 +192,7 @@ def _coerce_json(s: str) -> Dict[str, Any]:
         return json.loads(m.group(0))
 
 
-def _invoke_llm(user_text: str, history: Optional[List[Msg]], language_code: str) -> TalkOut:
+def _invoke_llm(user_text: str, history: Optional[List[Msg]]) -> TalkOut:
     client = _get_gemini_client()
     prompt = SYSTEM_INSTRUCTIONS + "\n\n" + _build_user_message(user_text, history)
 

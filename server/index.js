@@ -70,7 +70,7 @@ wss.on("connection", (ws) => {
       }
     }
 
-    console.warn("Unknown message type:", msg);
+    console.log("Received message:", msg);
   });
 
   ws.on("close", () => {

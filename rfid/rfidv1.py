@@ -21,8 +21,8 @@ CORS(app)
 app.config['CORS_HEADERS'] = 'Content-Type'
 
 SERVER_PORT = 5000
-CERT_FILE = "certs/cert.pem"
-KEY_FILE = "certs/key.pem"
+CERT_FILE = "/certs/cert.pem"
+KEY_FILE = "/certs/key.pem"
 
 
 IGNORED_TAGS = {"E2827802000000000D94B49F", "E2827802000000000D952A4C"}

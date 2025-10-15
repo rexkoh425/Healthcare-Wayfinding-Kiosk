@@ -1,158 +1,194 @@
 [
   {
     "location": "Diagnostic Imaging 2",
-    "code": "A01-04",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Diagnostic Imaging 2. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Right opposite the Urgent Care Centre, you’ll find Diagnostic Imaging 2 on your left. And that’s it — you’ve arrived at Diagnostic Imaging 2. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "A01-04",
+    "level": "1",
+    "directions": "Got it! You are heading to Diagnostic Imaging 2. You are currently at the Main Lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track. Right opposite the Urgent Care Centre, you will find Diagnostic Imaging 2 on your left. And that is it, you have arrived at Diagnostic Imaging 2. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Urgent Care Centre",
-    "code": "A01-05",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Urgent Care Centre. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see Lift Lobby B, continue walking straight — you’re on the right track. Right opposite 7 eleven, you’ll find Urgent Care Centre on your right. And that’s it — you’ve arrived at Urgent Care Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "A01-05",
+    "level": "1",
+    "directions": "Got it! You are heading to Urgent Care Centre. You are currently at the Main Lobby. Please turn right and walk straight. You will pass by lift lobby B, continue walking straight, you are on the right track.Right opposite 7 eleven, you will find Urgent Care Centre on your right. And that is it, you have arrived at Urgent Care Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Ward 8",
-    "code": "",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Ward 8. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Right beside Rehabilitation 2, you’ll find Ward 8 in front of you. And that’s it — you’ve arrived at Ward 8. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "",
+    "level": "1",
+    "directions": "Got it! You are heading to Ward 8. You are currently at the main lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track. Right beside Rehabilitation 2, you will find Ward 8 in front of you. And that is it, you have arrived at Ward 8. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Ward 9",
-    "code": "",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Ward 9. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Right opposite Rehabilitation 2, you’ll find Ward 9 on your right. And that’s it — you’ve arrived at Ward 9. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "",
+    "level": "1",
+    "directions": "Got it! You are heading to Ward 9. You are currently at the main lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track.Right opposite Rehabilitation 2, you will find Ward 9 on your right. And that is it, you have arrived at Ward 9.The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Ward 10",
-    "code": "",
-    "level": "Level 2",
-    "directions": "Got it! You are heading to Ward 10. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Near Rehabilitation 2, please take lift 6 to level 2. After exiting the lift, you’ll find Ward 10 on your left, right beside Ward 11. And that’s it — you’ve arrived at Ward 10. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "",
+    "level": "2",
+    "directions": "Got it! You are heading to Ward 10. You are currently at the main lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track. Near Rehabilitation 2, please take lift 6 to level 2. After exiting the lift, you will find Ward 10 on your left, right beside Ward 11. And that is it, you have arrived at Ward 10. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Ward 11",
-    "code": "",
-    "level": "Level 2",
-    "directions": "Got it! You are heading to Ward 11. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Near Rehabilitation 2, please take lift 6 to level 2. After exiting the lift, you’ll find Ward 11 just ahead of you. And that’s it — you’ve arrived at Ward 11. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "",
+    "level": "2",
+    "directions": "Got it! You are heading to Ward 11. You are currently at the main lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track. Near Rehabilitation 2, please take lift 6 to level 2. After exiting the lift, you will find Ward 11 just ahead of you. And that is it, you have arrived at Ward 11. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Diagnostic Imaging 3",
-    "code": "A02-02",
-    "level": "Level 2",
-    "directions": "Got it! You are heading to Diagnostic Imaging 3. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Near Rehabilitation 2, please take lift 6 to level 2. After exiting the lift, you’ll find Diagnostic Imaging 3 on your right, right opposite Major Operating Theatres 1 & 2. And that’s it — you’ve arrived at Diagnostic Imaging 3. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "A02-02",
+    "level": "2",
+    "directions": "Got it! You are heading to Diagnostic Imaging 3. You are currently at the main lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track. Near Diagnostic Imaging 2, please take lift 5 to level 2.  After exiting the lift, you will find Diagnostic Imaging 3 on your right, right opposite Major Operating Theatres 1 and 2. And that is it, you have arrived at Diagnostic Imaging 3. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Major Operating Theatres 1 & 2",
-    "code": "A02-01",
-    "level": "Level 2",
-    "directions": "Got it! You are heading to Major Operating Theatres 1&2. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Near Rehabilitation 2, please take lift 6 to level 2. After exiting the lift, you’ll find Ward 11 just ahead of you, right beside Major Operating Theatres 1&2. And that’s it — you’ve arrived at Major Operating Theatres 1&2. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "A02-01",
+    "level": "2",
+    "directions": "Got it! You are heading to Major Operating Theatres 1 & 2. You are currently at the main lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track. Near Diagnostic Imaging 2, please take lift 5 to level 2. After exiting the lift, you will find Major Operating Theatres 1 & 2 just ahead of you, right beside Ward 11. And that is it, you have arrived at Major Operating Theatres 1 & 2. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Intensive Care Unit 1",
-    "code": "A03-03",
-    "level": "Level 3",
-    "directions": "Got it! You are heading to Intensive Care Unit 1. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Near Rehabilitation 2, please take lift 6 to level 3. After exiting the lift, you’ll find Intensive Care Unit 1 on your right, right opposite Major Operating Theatres 3 & 4. And that’s it — you’ve arrived at Intensive Care Unit 1. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "A03-03",
+    "level": "3",
+    "directions": "Got it! You are heading to Intensive Care Unit 1.You are currently at the main lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track. Near Rehabilitation 2, please take lift 6 to level 3.  After exiting the lift, you will find Intensive Care Unit 1  on your right, right opposite Major Operating Theatres 3 & 4. And that is it, you have arrived at Intensive Care Unit 1. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Major Operating Theatres 3 & 4",
-    "code": "A03-01/02",
-    "level": "Level 3",
-    "directions": "Got it! You are heading to Major Operating Theatres 3&4. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Near Rehabilitation 2, please take lift 6 to level 3. After exiting the lift, you’ll find Ward 13 just ahead of you, right beside Major Operating Theatres 3&4. And that’s it — you’ve arrived at Major Operating Theatres 3&4. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "A03-01/02",
+    "level": "3",
+    "directions": "Got it! You are heading to Major Operating Theatres 3 & 4. You are currently at the main lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track. Near Rehabilitation 2, please take lift 6 to level 3. After exiting the lift, you will find Major Operating Theatres 3 and 4 just ahead of you, right beside ward 13. And that is it, you have arrived at  Major Operating Theatres 3 & 4. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Ward 12",
-    "code": "",
-    "level": "Level 3",
-    "directions": "Got it! You are heading to Ward 12. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Near Rehabilitation 2, please take lift 6 to level 3. After exiting the lift, you’ll find Ward 12 on your left, right beside Ward 13. And that’s it — you’ve arrived at Ward 12. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "",
+    "level": "3",
+    "directions": "Got it! You are heading to Ward 12. You are currently at the main lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track. Near Rehabilitation 2, please take lift 6 to level 3. After exiting the lift, you will find Ward 12 on your left, right beside Ward 13. And that is it, you have arrived at Ward 12. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Ward 13",
-    "code": "",
-    "level": "Level 3",
-    "directions": "Got it! You are heading to Ward 13. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre. Once you see 7 eleven, continue walking straight — you’re on the right track. Near Rehabilitation 2, please take lift 6 to level 3. After exiting the lift, you’ll find Ward 13 just ahead of you. And that’s it — you’ve arrived at Ward 13. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "",
+    "level": "3",
+    "directions": "Got it! You are heading to Ward 13. You are currently at the main lobby. Please turn right and walk straight. You will pass by lift lobby B. Once you see 7 eleven, continue walking straight, you are on the right track. Near Rehabilitation 2, please take lift 6 to level 3. After exiting the lift, you will find Ward 13 just ahead of you. And that is it, you have arrived at Ward 13. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Clinical Measurement Centre",
-    "code": "B01-02",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Clinical Measurement Centre. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by Clinical Measurement Centre. And that’s it — you’ve arrived at Clinical Measurement Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "B01-02",
+    "level": "1",
+    "directions": "Got it! You are heading to Clinical Measurement Centre. You are currently the main lobby. Please turn left and walk straight. You will pass by the vending machines, continue walking straight, you are on the right track. And that is it, you have arrived at Clinical Measurement Centre just ahead of you. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Pharmacy",
-    "code": "B01-01",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Pharmacy. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre, continue walking straight — you’re on the right track. Once you see Lift lobby B, turn right into the main lobby. You’ll find Pharmacy just ahead of you. And that’s it — you’ve arrived at Pharmacy. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "B01-01",
+    "level": "1",
+    "directions": "Got it! You are heading to Pharmacy. You are currently at the main lobby. You will find Pharmacy on your right. And that is it, you have arrived at Pharmacy. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Clinic J",
-    "code": "B02-02",
-    "level": "Level 2",
-    "directions": "Got it! You are heading to Clinic J. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre, continue walking straight — you’re on the right track. Once you see Lift Lobby B, please take lift 3 or 4 to level 2. After exiting the lift, you’ll find Clinic J on your right. And that’s it — you’ve arrived at Clinic J. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "B02-02",
+    "level": "2",
+    "directions": "Got it! You are heading to Clinic J. You are currently at the main lobby. Please turn right and walk straight. Once you see Lift Lobby B, please take lift 3 or 4 to level 2. After exiting the lift, you will find Clinic J on your right. And that is it, you have arrived at Clinic J. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Clinic K",
-    "code": "B02-01",
-    "level": "Level 2",
-    "directions": "Got it! You are heading to Clinic K. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre, continue walking straight — you’re on the right track. Once you see Lift Lobby B, please take lift 3 or 4 to level 2. After exiting the lift, you’ll find Clinic K on your left. And that’s it — you’ve arrived at Clinic K. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "B02-01",
+    "level": "2",
+    "directions": "Got it! You are heading to Clinic K. You are currently at the main lobby. Please turn right and walk straight. Once you see Lift Lobby B, please take lift 3 or 4 to level 2. After exiting the lift, you will find Clinic K on your left. And that is it, you have arrived at Clinic K. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Ward 7",
-    "code": "",
-    "level": "Level 3",
-    "directions": "Got it! You are heading to Ward 7. You are currently at Zone C, Level 1. Please turn left and walk straight. You will pass by the Clinical Measurement Centre, continue walking straight — you’re on the right track. Once you see Lift Lobby B, please take lift 3 or 4 to level 3. After exiting the lift, you’ll find Ward 7 on your left and right. And that’s it — you’ve arrived at Ward 7. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "",
+    "level": "3",
+    "directions": "Got it! You are heading to Ward 7. You are currently at the main lobby. Please turn right and walk straight. Once you see Lift Lobby B, please take lift 3 or 4 to level 3. After exiting the lift, you will find Ward 7 on your left and right. And that is it, you have arrived at Ward 7. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
-    "location": "Care & Counselling",
-    "code": "C01-02",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Care & Counselling. You are currently at Zone C, Level 1. Please turn right and walk straight. You will pass by Eye Surgery Centre Registration Kiosk, continue walking straight — you’re on the right track. Once you see the stairs, turn right and take the lift to level 1. After exiting the lift, you’ll find Care & Counselling on your left hallway. And that’s it — you’ve arrived at Care & Counselling. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "location": "Care and Counselling",
+    "unit": "C01-02",
+    "level": "1",
+    "directions": "Got it! You are heading to Care & Counselling. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Look out for the glass door on your left and head through it to enter zone C. Once you see Eye Surgery Centre Registration Kiosk, continue walking straight, you are on the right track. Turn right at the stairs and take the lift to level 1. After exiting the lift, you will find Care & Counselling along the left hallway. And that is it, you have arrived at Care & Counselling. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
-    "location": "Ear, Nose & Throat Centre",
-    "code": "C01-01",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Ear, Nose & Throat Centre. You are currently at Zone C, Level 1. Please turn right and walk straight. You will pass by Eye Surgery Centre Registration Kiosk, continue walking straight — you’re on the right track. Once you see the stairs, turn right and take the lift to level 1. After exiting the lift, turn left and continue walking straight. You'll find Ear, Nose & Throat Centre to your left. And that’s it — you’ve arrived at Ear, Nose & Throat Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "location": "Ear, Nose and Throat Centre",
+    "unit": "C01-01",
+    "level": "1",
+    "directions": "Got it! You are heading to Ear, Nose & Throat Centre. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Look out for the glass door on your left and head through it to enter zone C. Once you see Eye Surgery Centre Registration Kiosk, continue walking straight, you are on the right track. Turn right at the stairs and take the lift to level 1. After exiting the lift, turn left and continue walking straight. You'll find Ear, Nose & Throat Centre to your left. And that is it, you have arrived at Ear, Nose & Throat Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Eye Surgery Centre",
-    "code": "C02-01",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Eye Surgery Centre. You are currently at Zone C, Level 1. Please turn right and walk straight. You’ll find Eye Surgery Centre Registration Kiosk. And that’s it — you’ve arrived at Eye Surgery Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "C02-01",
+    "level": "1",
+    "directions": "Got it! You are heading to Eye Surgery Centre. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre, continue walking straight, you are on the right track. Look out for the glass door on your left and head through it to enter zone C. You will find Eye Surgery Centre just ahead of you. And that is it, you have arrived at Eye Surgery Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Surgery Centre",
-    "code": "C03-01",
-    "level": "Level 3",
-    "directions": "Got it! You are heading to Surgery Centre. You are currently at Zone C, Level 1. Please turn right and walk straight. You will pass by Eye Surgery Centre Registration Kiosk, continue walking straight — you’re on the right track. Once you see the stairs, turn right and take the lift to level 3. After exiting the lift, you’ll find Surgery Centre just ahead of you. And that’s it — you’ve arrived at Surgery Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "C03-01",
+    "level": "3",
+    "directions": "Got it! You are heading to Surgery Centre. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre, continue walking straight, you are on the right track. Look out for the glass door on your left and head through it to enter zone C. Turn right at the stairs and take the lift to level 3. After exiting the lift, you will find Surgery Centre just ahead of you. And that is it, you have arrived at Surgery Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Ambulatory Surgery Centre",
-    "code": "D01-06",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Ambulatory Surgery Centre. You are currently at Zone C, Level 1. Please turn right and walk straight. You will pass by the NUCOHS Dental Clinic @ AH. Once you see Lift Lobby D, continue walking straight — you’re on the right track. Continue walking straight at the junction and you’ll find Ambulatory Surgery Centre just ahead of you. And that’s it — you’ve arrived at Ambulatory Surgery Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "D01-06",
+    "level": "1",
+    "directions": "Got it! You are heading to Ambulatory Surgery Centre. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Once you see Lift Lobby D, continue walking straight, you are on the right track. Continue walking straight at the junction and you will find Ambulatory Surgery Centre just ahead of you. And that is it, you have arrived at Ambulatory Surgery Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Diagnostic Imaging 1",
-    "code": "",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Diagnostic Imaging 1. You are currently at Zone C, Level 1. Please turn right and walk straight. You will pass by the NUCOHS Dental Clinic @ AH. Once you see Lift Lobby D, continue walking straight — you’re on the right track. Turn left at the junction and you’ll find Diagnostic Imaging 1 just opposite of Rehabilitation 1. And that’s it — you’ve arrived at Diagnostic Imaging 1. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "",
+    "level": "1",
+    "directions": "Got it! You are heading to Diagnostic Imaging 1. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Once you see Lift Lobby D, continue walking straight, you are on the right track. Turn left at the junction and you will find Diagnostic Imaging 1 just opposite of Rehabilitation 1.And that is it, you have arrived at Diagnostic Imaging 1. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Endoscopy Centre",
-    "code": "D01-05",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to Endoscopy Centre. You are currently at Zone C, Level 1. Please turn right and walk straight. You will pass by the NUCOHS Dental Clinic @ AH. Once you see Lift Lobby D, continue walking straight — you’re on the right track. Continue walking straight at the junction and you’ll find Endoscopy Centre, right beside Ambulatory Surgery Centre. And that’s it — you’ve arrived at Endoscopy Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "D01-05",
+    "level": "1",
+    "directions": "Got it! You are heading to Endoscopy Centre. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Once you see Lift Lobby D, continue walking straight, you are on the right track. Continue walking straight at the junction and you will find Endoscopy Centre, right beside Ambulatory Surgery Centre. And that is it, you have arrived at Endoscopy Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "NUCOHS Dental Clinic @ AH",
-    "code": "D01-01",
-    "level": "Level 1",
-    "directions": "Got it! You are heading to NUCOHS Dental Clinic @ AH. You are currently at Zone C, Level 1. Please turn right and walk straight. You will pass by lift 2 of lift lobby D. Continue walking straight at the junction and you’ll find NUCOHS Dental Clinic @ AH on your left, right opposite Orthopaedic Centre. And that’s it — you’ve arrived at NUCOHS Dental Clinic @ AH. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+    "unit": "D01-01",
+    "level": "1",
+    "directions": "Got it! You are heading to NUCOHS Dental Clinic. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Once you see Lift Lobby D, continue walking straight, you are on the right track. You will find NUCOHS Dental Clinic @ AH on your left, right opposite Orthopaedic Centre. And that is it, you have arrived at NUCOHS Dental Clinic. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   },
   {
     "location": "Orthopaedic Centre",
-    "code": "D01-02",
-    "level": "Level 1",
-    "directions": "You’re heading to the Orthopaedic Centre; from Zone C Level 1, turn right, walk straight past Lift 2 at Lift Lobby D, continue at the junction, and you’ll find the Orthopaedic Centre on your left opposite the NUCOHS Dental Clinic at AH."
+    "unit": "D01-02",
+    "level": "1",
+    "directions": "Got it! You are heading to Orthopaedic Centre. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Once you see Lift Lobby D, continue walking straight, you are on the right track. You will find Orthopaedic Centre on your right, right opposite NUCOHS Dental Clinic @ AH. And that is it, you have arrived at Orthopaedic Centre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+  },
+  {
+    "location": "Rehabilitation 1 ",
+    "unit": "D01-04",
+    "level": "1",
+    "directions": "Got it! You are heading to Rehabilitation 1. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre. Once you see Lift Lobby D, continue walking straight, you are on the right track. Turn left at the junction and you will find Rehabilitation 1 just opposite of Diagnostic Imaging 1. And that is it, you have arrived at Rehabilitation 1. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+  },
+  {
+    "location": "Ward 2",
+    "unit": "",
+    "level": "2",
+    "directions": "Got it! You are heading to Ward 2. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre, continue walking straight, you are on the right track. Once you see Lift Lobby D, please take lift 1 or 2 to level 2. After exiting the lift, you will find Ward 2 just ahead of you. And that is it, you have arrived at Ward 2. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+  },
+  {
+    "location": "Ward 3",
+    "unit": "",
+    "level": "2",
+    "directions": "Got it! You are heading to Ward 3. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre, continue walking straight, you are on the right track. Once you see Lift Lobby D, please take lift 1 or 2 to level 2. After exiting the lift, you will find Ward 3 on your right. And that is it, you have arrived at Ward 3. The signboards along the way will guide you to your destination. We hope you find your way smoothly"
+  },
+  {
+    "location": "Day Surgery Operating Theatre",
+    "unit": "D03-01",
+    "level": "3",
+    "directions": "Got it! You are heading to Day Surgery Operating Theatre. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre, continue walking straight, you are on the right track. Once you see Lift Lobby D, please take lift 1 or 2 to level 3. After exiting the lift, you will find Day Surgery Operating Theatre to your left, just beside Ward 4. And that is it, you have arrived at Day Surgery Operating Theatre. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+  },
+  {
+    "location": "Ward 4",
+    "unit": "",
+    "level": "3",
+    "directions": "Got it! You are heading to Ward 4. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre, continue walking straight, you are on the right track. Once you see Lift Lobby D, please take lift 1 or 2 to level 3. After exiting the lift, you will find Ward 4  just ahead of you. And that is it, you have arrived at Ward 4. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
+  },
+  {
+    "location": "Ward 5",
+    "unit": "",
+    "level": "3",
+    "directions": "Got it! You are heading to Ward 5. You are currently at the main lobby. Please turn left and walk straight. You will pass by Clinical Measurement Centre, continue walking straight, you are on the right track. Once you see Lift Lobby D, please take lift 1 or 2 to level 3. After exiting the lift, you will find Ward 5 on your right.  And that is it, you have arrived at Ward 5. The signboards along the way will guide you to your destination. We hope you find your way smoothly!"
   }
 ]

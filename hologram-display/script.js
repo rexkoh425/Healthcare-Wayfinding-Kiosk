@@ -1,9 +1,9 @@
 (() => {
   // ----- configuration -----
-  const wordsPerMinute = 240;            // reading speed (adjustable)
-  const minSentenceDuration = 4;         // seconds minimum to keep short sentences readable
+  const wordsPerMinute = 220;            // reading speed (adjustable)
+  const minSentenceDuration = 2;         // seconds minimum to keep short sentences readable
   const startOffset = 0.8;               // seconds after video start to show first subtitle
-  const gapBetweenSentences = 0.4;       // seconds pause between sentences
+  const gapBetweenSentences = 0.7;       // seconds pause between sentences
   const hideDelayBuffer = 0.5;
   // -------------------------
 
@@ -346,7 +346,7 @@
         if (msg.type === "set" && msg.video) {
           console.log("Set video to", msg.video, "reason:", msg.reason);
           setVideoFile(msg.video);
-          syncSubtitlesForVideo(msg.video);
+          // syncSubtitlesForVideo(msg.video);
         } else if (msg.type === "subtitle" && typeof msg.text === "string") {
           // Only show subtitle if reply.mp4 is active
           if (video.currentSrc && video.currentSrc.includes("reply.mp4")) {
