@@ -262,22 +262,22 @@ const RfidScreen: React.FC = () => {
     handleTags();
   }, []);
 
-  useEffect(() => {
-    // Only start the timer when the collection screen is visible (`dispensing` is false)
-    if (!dispensing) {
-      const inactivityTimer = setTimeout(() => {
-        console.log("Timeout: User collect sticker. Navigating home.");
-        // Navigate back to the main page after 15 seconds
-        send({ type: "action", action: "idle" });
-        router.push("/");
-      }, 15000); // 15000 milliseconds = 15 seconds
+  // useEffect(() => {
+  //   // Only start the timer when the collection screen is visible (`dispensing` is false)
+  //   if (!dispensing) {
+  //     const inactivityTimer = setTimeout(() => {
+  //       console.log("Timeout: User collect sticker. Navigating home.");
+  //       // Navigate back to the main page after 15 seconds
+  //       send({ type: "action", action: "idle" });
+  //       router.push("/");
+  //     }, 15000); // 15000 milliseconds = 15 seconds
 
-      //Cleanup function to clear timer
-      return () => {
-        clearTimeout(inactivityTimer);
-      };
-    }
-  }, [dispensing, router]);
+  //     //Cleanup function to clear timer
+  //     return () => {
+  //       clearTimeout(inactivityTimer);
+  //     };
+  //   }
+  // }, [dispensing, router]);
 
   const handleCollected = () => {
     // send action to server (touchscreen -> hologram)
