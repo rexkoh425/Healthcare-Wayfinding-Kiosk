@@ -140,22 +140,109 @@ def configure_tesseract(win_path: str, logger: logging.Logger):
         else:
             logger.warning("Tesseract path not found: %s", win_path)
 
+INTENSITY_MASK_CFG = {
+    "enabled": False,
+    "thresh": 215,
+    "invert": False,
+    "min_ratio": 0.15,
+}
+
+SLIP_EXTRACT_CFG = {
+    "thr": 190,
+    "use_adaptive": False,
+    "adaptive_block": 37,
+    "adaptive_C": -10,
+    "morph_kernel": 10,
+    "fill_kernel": 7,
+    "open_kernel": 15,
+    "min_keep_area": 4000,
+    "use_white_filter": True,
+    "v_min": 130,
+    "s_max": 100,
+    "post_white_margin": 10,
+    "target_white_ratio": 0.85,
+    "crop_margin": 0.03,
+    "quad_expand_frac": 0.02,
+    "prefer_pad_on_white_fail": True,
+    "inner_band_frac": 0.0,
+}
+
+HEIGHT_CLASSIFIER = [
+    {"name": "1", "min_h": 565, "max_h": 615},
+    {"name": "2", "min_h": 615, "max_h": 700},
+    {"name": "3", "min_h": 700, "max_h": 820},
+]
+
+CANONICAL_SIZES = {}
+
+OVERLAY_MODE = os.environ.get("OCR_OVERLAY_MODE", "rectified").lower()
+if OVERLAY_MODE not in {"rectified", "original"}:
+    OVERLAY_MODE = "rectified"
+
+TEMPLATE_CROP_PAD = int(os.environ.get("TEMPLATE_CROP_PAD", "4"))
+
+TESSERACT_WIN_PATH = os.environ.get("TESSERACT_WIN_PATH", "")
+
+DEBUG_DUMP_DIR_ENV = os.environ.get("OCR_DEBUG_DUMP_DIR")
+if DEBUG_DUMP_DIR_ENV:
+    DEBUG_DUMP_DIR = Path(DEBUG_DUMP_DIR_ENV)
+    DEBUG_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+else:
+    DEBUG_DUMP_DIR = None
+
+def configure_tesseract(win_path: str, logger: logging.Logger):
+    if pytesseract is None:
+        logger.warning("pytesseract not available; OCR will be skipped.")
+        return
+    if os.name == "nt" and win_path:
+        p = Path(win_path)
+        if p.exists():
+            pytesseract.pytesseract.tesseract_cmd = str(p)
+            logger.info("Using Windows Tesseract at: %s", win_path)
+        else:
+            logger.warning("Tesseract path not found: %s", win_path)
+
 log = logging.getLogger(__name__)
 configure_tesseract(TESSERACT_WIN_PATH, log)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Location matching helpers
 # ──────────────────────────────────────────────────────────────────────────────
-LOCATION_CANDIDATES = (
-    [f"Clinic {chr(ord('A') + i)}" for i in range(26)]
-    + [f"Ward {i}" for i in range(1, 16)]
-    + [
-        "Cocoon Clinic",
-        "Diagnostic Imaging 2",
-        "X-ray",
-        "Eye Center",
-    ]
-)
+LOCATION_CANDIDATES = [
+    "Diagnostic Imaging 2",
+    "Urgent Care Centre",
+    "Ward 8",
+    "Ward 9",
+    "Diagnostic Imaging 3",
+    "Major Operating Theatres 1 & 2",
+    "Ward 10",
+    "Ward 11",
+    "Intensive Care Unit 1",
+    "Major Operating Theatres 3 & 4",
+    "Ward 12",
+    "Ward 13",
+    "Clinical Measurement Centre",
+    "Pharmacy",
+    "Clinic J",
+    "Clinic K",
+    "Ward 7",
+    "Care and Counselling",
+    "Ear, Nose and Throat Centre",
+    "Eye Surgery Centre",
+    "Surgery Centre",
+    "Ambulatory Surgery Centre",
+    "Endoscopy Centre",
+    "NUCOHS Dental Clinic",
+    "Orthopaedic Centre"
+    "Rehabilitation 1",
+    "Ward 2",
+    "Ward 3",
+    "Day Surgery Operating Theatre",
+    "Ward 4",
+    "Ward 5",
+    "Dialysis Centre",
+    "Diagnostic Imaging 1",
+]
 
 def sanitize_ocr_text(value: Optional[str]) -> str:
     if value is None:

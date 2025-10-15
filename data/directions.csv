@@ -1,0 +1,34 @@
+name,direction
+Diagnostic Imaging 2,left
+Urgent Care Centre,left
+Ward 8,left
+Ward 9,left
+Diagnostic Imaging 3,left
+Major Operating Theatres 1 & 2,left
+Ward 10,left
+Ward 11,left
+Intensive Care Unit 1,left
+Major Operating Theatres 3 & 4,left
+Ward 12,left
+Ward 13,left
+Clinical Measurement Centre,left
+Pharmacy,left
+Clinic J,left
+Clinic K,left
+Ward 7,left
+Care and Counselling,left
+"Ear, Nose and Throat Centre",left
+Eye Surgery Centre,left
+Surgery Centre,left
+Ambulatory Surgery Centre,back
+Endoscopy Centre,here
+NUCOHS Dental Clinic,left
+Orthopaedic Centre,left
+Rehabilitation 1,right
+Ward 2,up
+Ward 3,up
+Day Surgery Operating Theatre,up
+Ward 4,up
+Ward 5,up
+Dialysis Centre,up
+Diagnostic Imaging 1,here

@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import useWebSocket from "@/lib/useWebSocket";
+import { Mic, Volume2, Loader2 } from "lucide-react";
 
 const SESSION_ID = "kiosk-touchscreen";
 
@@ -24,7 +26,7 @@ function resolveChatBase(): string {
 
 const ChatScreen: React.FC = () => {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { send } = useWebSocket();
 
   const [status, setStatus] = useState<Status>("idle");
@@ -49,18 +51,47 @@ const ChatScreen: React.FC = () => {
 
   const isBusy = status === "processing" || status === "playing";
 
-  const label = (() => {
-    switch (status) {
-      case "recording":
-        return "Release to send";
-      case "processing":
-        return "Processing...";
-      case "playing":
-        return "Playing response...";
-      default:
-        return "Hold to talk";
-    }
-  })();
+  const statusConfig = {
+    idle: {
+      label: "Hold to Talk",
+      subtitle: "Press and hold the button below to ask your question",
+      bgColor: "bg-gradient-to-br from-hospital-teal to-hospital-blue",
+      borderColor: "border-hospital-teal",
+      icon: Mic,
+      iconColor: "text-white",
+      pulseClass: "",
+    },
+    recording: {
+      label: "Listening...",
+      subtitle: "Release when you're done speaking",
+      bgColor: "bg-gradient-to-br from-red-500 to-red-600",
+      borderColor: "border-red-400",
+      icon: Mic,
+      iconColor: "text-white",
+      pulseClass: "animate-pulse",
+    },
+    processing: {
+      label: "Processing Your Question",
+      subtitle: "Please wait while I think...",
+      bgColor: "bg-gradient-to-br from-purple-700 to-purple-900",
+      borderColor: "border-purple-400",
+      icon: Loader2,
+      iconColor: "text-white",
+      pulseClass: "animate-spin",
+    },
+    playing: {
+      label: "Playing Response",
+      subtitle: "Listen carefully to the answer",
+      bgColor: "bg-gradient-to-br from-green-500 to-green-600",
+      borderColor: "border-green-400",
+      icon: Volume2,
+      iconColor: "text-white",
+      pulseClass: "animate-pulse",
+    },
+  };
+
+  const currentConfig = statusConfig[status];
+  const Icon = currentConfig.icon;
 
   const cleanupStream = () => {
     if (streamRef.current) {
@@ -79,7 +110,9 @@ const ChatScreen: React.FC = () => {
       setError(null);
       setTranscript(null);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+      const recorder = new MediaRecorder(stream, {
+        mimeType: "audio/webm;codecs=opus",
+      });
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
       streamRef.current = stream;
@@ -99,6 +132,7 @@ const ChatScreen: React.FC = () => {
         formData.append("audio", blob, "speech.webm");
         formData.append("session_id", SESSION_ID);
         formData.append("return_mode", "json");
+        formData.append("language", i18n.language || "en");
 
         try {
           const response = await fetch(`${apiBase}/talk-voice`, {
@@ -118,19 +152,30 @@ const ChatScreen: React.FC = () => {
           }
 
           send({ type: "action", action: "hear" });
-          
-          setTranscript(typeof payload?.transcript === "string" ? payload.transcript : null);
+
+          setTranscript(
+            typeof payload?.transcript === "string" ? payload.transcript : null
+          );
 
           // Send transcript to server for hologram subtitles
-          if (typeof payload?.llm.response_text === "string" && payload.llm.response_text.trim().length > 0) {
+          if (
+            typeof payload?.llm.response_text === "string" &&
+            payload.llm.response_text.trim().length > 0
+          ) {
             send({ type: "subtitle", text: payload.llm.response_text.trim() });
           }
 
           const locations: string[] = Array.isArray(payload?.llm?.locations)
-            ? payload.llm.locations.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0)
+            ? payload.llm.locations.filter(
+                (item: unknown): item is string =>
+                  typeof item === "string" && item.trim().length > 0
+              )
             : [];
-          const uniqueLocations = Array.from(new Set(locations.map((item) => item.trim()))).slice(0, 3);
-          const shouldNavigate = payload?.llm?.intent === "route" && uniqueLocations.length > 0;
+          const uniqueLocations = Array.from(
+            new Set(locations.map((item) => item.trim()))
+          ).slice(0, 3);
+          const shouldNavigate =
+            payload?.llm?.intent === "route" && uniqueLocations.length > 0;
 
           const b64 = payload?.audio_wav_b64;
           if (typeof b64 !== "string" || b64.length === 0) {
@@ -152,7 +197,9 @@ const ChatScreen: React.FC = () => {
             URL.revokeObjectURL(audioUrl);
             setStatus("idle");
             if (shouldNavigate) {
-              const params = new URLSearchParams({ locations: JSON.stringify(uniqueLocations) });
+              const params = new URLSearchParams({
+                locations: JSON.stringify(uniqueLocations),
+              });
               router.push(`/destination?${params.toString()}`);
             }
           };
@@ -161,7 +208,9 @@ const ChatScreen: React.FC = () => {
             setStatus("idle");
             setError("Audio playback failed");
             if (shouldNavigate) {
-              const params = new URLSearchParams({ locations: JSON.stringify(uniqueLocations) });
+              const params = new URLSearchParams({
+                locations: JSON.stringify(uniqueLocations),
+              });
               router.push(`/destination?${params.toString()}`);
             }
           };
@@ -173,14 +222,18 @@ const ChatScreen: React.FC = () => {
             setStatus("idle");
             setError(playError?.message ?? "Playback blocked by the browser");
             if (shouldNavigate) {
-              const params = new URLSearchParams({ locations: JSON.stringify(uniqueLocations) });
+              const params = new URLSearchParams({
+                locations: JSON.stringify(uniqueLocations),
+              });
               router.push(`/destination?${params.toString()}`);
             }
           }
         } catch (requestError: any) {
           console.error("Chat screen error", requestError);
           setStatus("idle");
-          setError(requestError?.message ?? "Failed to contact the chatbot service");
+          setError(
+            requestError?.message ?? "Failed to contact the chatbot service"
+          );
         }
       };
 
@@ -205,47 +258,143 @@ const ChatScreen: React.FC = () => {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-6 bg-[#0b1020] px-4">
-      <div className="flex flex-col items-center gap-4">
-        <button
-          type="button"
-          onMouseDown={startRecording}
-          onMouseUp={stopRecording}
-          onMouseLeave={stopRecording}
-          onTouchStart={(event) => {
-            event.preventDefault();
-            startRecording();
-          }}
-          onTouchEnd={(event) => {
-            event.preventDefault();
-            stopRecording();
-          }}
-          className={`text-lg font-medium text-white px-10 py-6 rounded-xl border-2 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-hospital-teal ${
-            status === "recording"
-              ? "bg-[#882f2f] border-[#2a3a6b]"
-              : status === "processing"
-                ? "bg-[#5b3a88] border-[#2a3a6b]"
-                : status === "playing"
-                  ? "bg-[#2a6b3a] border-[#2a3a6b]"
-                  : "bg-[#1b2a57] border-[#2a3a6b] hover:bg-[#24346f]"
-          } ${isBusy ? "opacity-80" : ""}`}
-          disabled={isBusy}
-        >
-          {label}
-        </button>
-        {transcript && (
-          <p className="text-sky-200 text-center max-w-xs">
-            You said: {transcript}
+    <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
+      <Card className="w-full max-w-2xl p-8 shadow-2xl border-2 border-hospital-blue/20 bg-white/95 backdrop-blur">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-hospital-blue-gray mb-2">
+            Wayfinding Assistant
+          </h1>
+          <p className="text-lg text-hospital-blue-gray/70">
+            Ask me for directions to navigate the hospital
           </p>
+        </div>
+
+        {/* Status Indicator */}
+        <div className="mb-8 text-center">
+          <div
+            className={`inline-flex items-center gap-3 px-6 py-3 rounded-full ${currentConfig.bgColor} shadow-lg transition-all duration-300`}
+          >
+            <Icon
+              className={`w-6 h-6 ${currentConfig.iconColor} ${currentConfig.pulseClass}`}
+            />
+            <span className="text-white font-semibold text-lg">
+              {currentConfig.label}
+            </span>
+          </div>
+          <p className="text-hospital-blue-gray/60 mt-3 text-base">
+            {currentConfig.subtitle}
+          </p>
+        </div>
+
+        {/* Main Talk Button */}
+        <div className="flex flex-col items-center gap-6">
+          <button
+            type="button"
+            onMouseDown={startRecording}
+            onMouseUp={stopRecording}
+            onMouseLeave={stopRecording}
+            onTouchStart={(event) => {
+              event.preventDefault();
+              startRecording();
+            }}
+            onTouchEnd={(event) => {
+              event.preventDefault();
+              stopRecording();
+            }}
+            disabled={isBusy}
+            className={`relative group transition-all duration-300 ${
+              isBusy
+                ? "opacity-50 cursor-not-allowed"
+                : "hover:scale-105 active:scale-95"
+            }`}
+          >
+            {/* Outer Ring */}
+            <div
+              className={`absolute inset-0 rounded-full ${currentConfig.borderColor} border-4 ${
+                status === "recording" ? "animate-ping opacity-75" : ""
+              }`}
+            />
+
+            {/* Button Circle */}
+            <div
+              className={`relative w-48 h-48 rounded-full ${currentConfig.bgColor} shadow-2xl flex items-center justify-center border-4 ${currentConfig.borderColor} transition-all duration-300`}
+            >
+              <Icon
+                className={`w-24 h-24 ${currentConfig.iconColor} ${currentConfig.pulseClass}`}
+              />
+            </div>
+
+            {/* Ripple Effect on Recording */}
+            {status === "recording" && (
+              <>
+                <div className="absolute inset-0 rounded-full bg-red-400 animate-ping opacity-25" />
+                <div
+                  className="absolute inset-0 rounded-full bg-red-400 animate-pulse opacity-25"
+                  style={{ animationDelay: "0.3s" }}
+                />
+              </>
+            )}
+          </button>
+
+          {/* Instruction Text */}
+          <p className="text-hospital-blue-gray/80 text-center text-lg font-medium">
+            {status === "idle"
+              ? "Press & Hold to Speak"
+              : status === "recording"
+                ? "Release to Send"
+                : ""}
+          </p>
+        </div>
+
+        {/* Transcript Display */}
+        {transcript && (
+          <div className="mt-8 p-6 bg-hospital-blue/5 rounded-xl border-2 border-hospital-blue/20 animate-fade-in">
+            <p className="text-sm font-semibold text-hospital-blue-gray/60 mb-2">
+              You asked:
+            </p>
+            <p className="text-lg text-hospital-blue-gray italic">
+              "{transcript}"
+            </p>
+          </div>
         )}
+
+        {/* Error Display */}
         {error && (
-          <p className="text-red-200 text-center max-w-xs">{error}</p>
+          <div className="mt-8 p-6 bg-red-50 rounded-xl border-2 border-red-200 animate-fade-in">
+            <p className="text-sm font-semibold text-red-600 mb-2">Error:</p>
+            <p className="text-base text-red-700">{error}</p>
+          </div>
         )}
-      </div>
-      <Button variant="secondary" onClick={handleBack} className="bg-white/10 text-white hover:bg-white/20">
-        {t("common.back")}
-      </Button>
-    </main>
+
+        {/* Audio Waveform Visualisation (only during playing) */}
+        {status === "playing" && (
+          <div className="mt-8 flex justify-center items-center gap-2 h-16">
+            {[...Array(5)].map((_, i) => (
+              <div
+                key={i}
+                className="w-2 bg-green-500 rounded-full animate-pulse"
+                style={{
+                  height: `${30 + Math.random() * 40}%`,
+                  animationDelay: `${i * 0.1}s`,
+                  animationDuration: "0.6s",
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="flex justify-between">
+          <Button
+            variant="ghost"
+            onClick={handleBack}
+            className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
+          >
+            {t("common.back")}
+          </Button>
+        </div>
+      </Card>
+    </div>
   );
 };
 

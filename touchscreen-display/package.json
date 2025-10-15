@@ -16,7 +16,7 @@
     "class-variance-authority": "^0.7.1",
     "cloudinary": "^2.7.0",
     "clsx": "^2.1.1",
-    "healthicons": "^2.0.0",
+    "healthicons-react": "^3.5.0",
     "i18next": "^25.5.2",
     "i18next-http-backend": "^3.0.2",
     "lucide-react": "^0.542.0",

@@ -19,6 +19,7 @@ from .settings import settings
 
 
 from .tts_router import router as tts_router, synthesize_wav
+import csv
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -60,6 +61,28 @@ class TalkVoiceOut(BaseModel):
     llm: LlmOut
     audio_wav_b64: Optional[str] = None
 
+def load_destinations_from_csv(csv_file):
+    """
+    Load destinations from CSV file and format as Python list string.
+    CSV should have destinations in one column or comma-separated.
+    """
+    destinations = []
+    
+    with open(csv_file, 'r') as file:
+        reader = csv.reader(file)
+        next(reader)  # Skip header row
+        for row in reader:
+            if row:  # Skip empty rows
+                dest = row[0].strip()  # Get first column only
+                if dest:
+                    destinations.append(dest)
+    
+    sorted_destinations = destinations
+    
+    # Format as Python list string
+    python_string = "\n".join([f"- {dest}" for dest in destinations])
+    
+    return python_string
 
 def _format_locations_for_prompt(locations: List[str]) -> str:
     cleaned = [loc.strip() for loc in locations if isinstance(loc, str) and loc.strip()]
@@ -82,17 +105,7 @@ def _build_tts_response_text(llm_out: LlmOut) -> str:
 
 
 # Accepted ASR language codes (mirrors faster-whisper)
-_ASR_LANG_CODES = {
-    "af", "am", "ar", "as", "az", "ba", "be", "bg", "bn", "bo", "br", "bs",
-    "ca", "cs", "cy", "da", "de", "el", "en", "es", "et", "eu", "fa", "fi",
-    "fo", "fr", "gl", "gu", "ha", "haw", "he", "hi", "hr", "ht", "hu", "hy",
-    "id", "is", "it", "ja", "jw", "ka", "kk", "km", "kn", "ko", "la", "lb",
-    "ln", "lo", "lt", "lv", "mg", "mi", "mk", "ml", "mn", "mr", "ms", "mt",
-    "my", "ne", "nl", "nn", "no", "oc", "pa", "pl", "ps", "pt", "ro", "ru",
-    "sa", "sd", "si", "sk", "sl", "sn", "so", "sq", "sr", "su", "sv", "sw",
-    "ta", "te", "tg", "th", "tk", "tl", "tr", "tt", "uk", "ur", "uz", "vi",
-    "yi", "yo", "zh", "yue",
-}
+_ASR_LANG_CODES = {"en", "ms", "ta", "zh"}
 
 
 def _normalise_asr_language(lang: Optional[str]) -> Optional[str]:
@@ -135,14 +148,11 @@ SYSTEM_INSTRUCTIONS = """You are a hospital kiosk assistant. Classify the user's
 4) "nonsense" if the input is not meaningful for this context
 
 When intent="route", determine the top THREE most likely destinations the user wants next (highest confidence first), using conversation history to resolve context and ignoring filler or noisy words. Every candidate must be mapped to the following canonical names only:
-- Clinic A, Clinic B, Clinic C, … up to Clinic Z (26 distinct locations; choose the matching letter)
-- Cocoon Clinic
-- Diagnostic Imaging 2
-- X-ray
-- Eye Center
-- Ward 2
-- Orthopaedic Centre
-- ICU 1
+"""
+
+SYSTEM_INSTRUCTIONS += load_destinations_from_csv("/data/directions.csv")
+
+SYSTEM_INSTRUCTIONS += """
 
 If the user refers to a clinic letter in any form (e.g. "clinic e", "klinick ee"), normalise it to the correct "Clinic <Letter>" entry. Remove duplicates and return the top three distinct destinations (or fewer if you are unsure). If you truly cannot decide, set ask_clarification=true and craft a clarifying response.
 
@@ -154,7 +164,6 @@ Return STRICT JSON only:
   "ask_clarification": true|false,
   "repeat_request": true|false
 }"""
-
 
 def _format_history(history: Optional[List[Msg]]) -> str:
     if not history:
@@ -288,7 +297,7 @@ async def talk_voice(
     text: Optional[str] = Form(default=None),
     history: Optional[str] = Form(default=None),
     return_mode: str = Form("audio"),
-    language: Optional[str] = Form(default=None),
+    language: Optional[str] = Form(default="en"),
 ):
     history_items = _parse_history_form(history)
 
