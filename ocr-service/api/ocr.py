@@ -140,16 +140,41 @@ configure_tesseract(TESSERACT_WIN_PATH, log)
 # ──────────────────────────────────────────────────────────────────────────────
 # Location matching helpers
 # ──────────────────────────────────────────────────────────────────────────────
-LOCATION_CANDIDATES = (
-    [f"Clinic {chr(ord('A') + i)}" for i in range(26)]
-    + [f"Ward {i}" for i in range(1, 16)]
-    + [
-        "Cocoon Clinic",
-        "Diagnostic Imaging 2",
-        "X-ray",
-        "Eye Center",
-    ]
-)
+LOCATION_CANDIDATES = [
+    "Diagnostic Imaging 2",
+    "Urgent Care Centre",
+    "Ward 8",
+    "Ward 9",
+    "Diagnostic Imaging 3",
+    "Major Operating Theatres 1 & 2",
+    "Ward 10",
+    "Ward 11",
+    "Intensive Care Unit 1",
+    "Major Operating Theatres 3 & 4",
+    "Ward 12",
+    "Ward 13",
+    "Clinical Measurement Centre",
+    "Pharmacy",
+    "Clinic J",
+    "Clinic K",
+    "Ward 7",
+    "Care and Counselling",
+    "Ear, Nose and Throat Centre",
+    "Eye Surgery Centre",
+    "Surgery Centre",
+    "Ambulatory Surgery Centre",
+    "Endoscopy Centre",
+    "NUCOHS Dental Clinic",
+    "Orthopaedic Centre"
+    "Rehabilitation 1",
+    "Ward 2",
+    "Ward 3",
+    "Day Surgery Operating Theatre",
+    "Ward 4",
+    "Ward 5",
+    "Dialysis Centre",
+    "Diagnostic Imaging 1",
+]
 
 def sanitize_ocr_text(value: Optional[str]) -> str:
     if value is None:
