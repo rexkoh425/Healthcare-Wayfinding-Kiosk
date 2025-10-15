@@ -78,117 +78,13 @@ TARGET_STREAM_FPS = int(os.environ.get("TARGET_STREAM_FPS", "8"))
 _FRAME_PERIOD     = 1.0 / max(1, TARGET_STREAM_FPS)
 STREAM_JPEG_QUALITY = int(os.environ.get("STREAM_JPEG_QUALITY", "85"))
 
-INTENSITY_MASK_CFG = {
-    "enabled": False,
-    "thresh": 215,
-    "invert": False,
-    "min_ratio": 0.15,
-}
-
-SLIP_EXTRACT_CFG = {
-    "thr": 190,
-    "use_adaptive": False,
-    "adaptive_block": 37,
-    "adaptive_C": -10,
-    "morph_kernel": 10,
-    "fill_kernel": 7,
-    "open_kernel": 15,
-    "min_keep_area": 4000,
-    "use_white_filter": True,
-    "v_min": 130,
-    "s_max": 100,
-    "post_white_margin": 10,
-    "target_white_ratio": 0.85,
-    "crop_margin": 0.03,
-    "quad_expand_frac": 0.02,
-    "prefer_pad_on_white_fail": True,
-    "inner_band_frac": 0.0,
-}
-
-HEIGHT_CLASSIFIER = [
-    {"name": "1", "min_h": 565, "max_h": 615},
-    {"name": "2", "min_h": 615, "max_h": 700},
-    {"name": "3", "min_h": 700, "max_h": 820},
-]
-
 CANONICAL_SIZES = {}
 
 OVERLAY_MODE = os.environ.get("OCR_OVERLAY_MODE", "rectified").lower()
 if OVERLAY_MODE not in {"rectified", "original"}:
     OVERLAY_MODE = "rectified"
 
-TEMPLATE_CROP_PAD = int(os.environ.get("TEMPLATE_CROP_PAD", "4"))
-
 TESSERACT_WIN_PATH = os.environ.get("TESSERACT_WIN_PATH", "")
-
-DEBUG_DUMP_DIR_ENV = os.environ.get("OCR_DEBUG_DUMP_DIR")
-if DEBUG_DUMP_DIR_ENV:
-    DEBUG_DUMP_DIR = Path(DEBUG_DUMP_DIR_ENV)
-    DEBUG_DUMP_DIR.mkdir(parents=True, exist_ok=True)
-else:
-    DEBUG_DUMP_DIR = None
-
-def configure_tesseract(win_path: str, logger: logging.Logger):
-    if pytesseract is None:
-        logger.warning("pytesseract not available; OCR will be skipped.")
-        return
-    if os.name == "nt" and win_path:
-        p = Path(win_path)
-        if p.exists():
-            pytesseract.pytesseract.tesseract_cmd = str(p)
-            logger.info("Using Windows Tesseract at: %s", win_path)
-        else:
-            logger.warning("Tesseract path not found: %s", win_path)
-
-INTENSITY_MASK_CFG = {
-    "enabled": False,
-    "thresh": 215,
-    "invert": False,
-    "min_ratio": 0.15,
-}
-
-SLIP_EXTRACT_CFG = {
-    "thr": 190,
-    "use_adaptive": False,
-    "adaptive_block": 37,
-    "adaptive_C": -10,
-    "morph_kernel": 10,
-    "fill_kernel": 7,
-    "open_kernel": 15,
-    "min_keep_area": 4000,
-    "use_white_filter": True,
-    "v_min": 130,
-    "s_max": 100,
-    "post_white_margin": 10,
-    "target_white_ratio": 0.85,
-    "crop_margin": 0.03,
-    "quad_expand_frac": 0.02,
-    "prefer_pad_on_white_fail": True,
-    "inner_band_frac": 0.0,
-}
-
-HEIGHT_CLASSIFIER = [
-    {"name": "1", "min_h": 565, "max_h": 615},
-    {"name": "2", "min_h": 615, "max_h": 700},
-    {"name": "3", "min_h": 700, "max_h": 820},
-]
-
-CANONICAL_SIZES = {}
-
-OVERLAY_MODE = os.environ.get("OCR_OVERLAY_MODE", "rectified").lower()
-if OVERLAY_MODE not in {"rectified", "original"}:
-    OVERLAY_MODE = "rectified"
-
-TEMPLATE_CROP_PAD = int(os.environ.get("TEMPLATE_CROP_PAD", "4"))
-
-TESSERACT_WIN_PATH = os.environ.get("TESSERACT_WIN_PATH", "")
-
-DEBUG_DUMP_DIR_ENV = os.environ.get("OCR_DEBUG_DUMP_DIR")
-if DEBUG_DUMP_DIR_ENV:
-    DEBUG_DUMP_DIR = Path(DEBUG_DUMP_DIR_ENV)
-    DEBUG_DUMP_DIR.mkdir(parents=True, exist_ok=True)
-else:
-    DEBUG_DUMP_DIR = None
 
 def configure_tesseract(win_path: str, logger: logging.Logger):
     if pytesseract is None:
@@ -482,66 +378,7 @@ def clip_box(box, w, h):
     return [x1, y1, x2, y2]
 
 
-def enlarge_box_by_scale(box, W, H, scale_w=1.25, scale_h=1.35):
-    """
-    Expand a box by given width/height scales (e.g., 1.25 = +25%).
-    box: (x1, y1, x2, y2), image size: W,H.
-    Returns integer, clamped (x1, y1, x2, y2).
-    """
-    x1, y1, x2, y2 = map(float, box)
-    cx = (x1 + x2) * 0.5
-    cy = (y1 + y2) * 0.5
-    bw = (x2 - x1)
-    bh = (y2 - y1)
 
-    new_w = bw * scale_w
-    new_h = bh * scale_h
-
-    nx1 = int(round(cx - new_w * 0.5))
-    ny1 = int(round(cy - new_h * 0.5))
-    nx2 = int(round(cx + new_w * 0.5))
-    ny2 = int(round(cy + new_h * 0.5))
-
-    nx1 = _clamp(nx1, 0, W - 1)
-    ny1 = _clamp(ny1, 0, H - 1)
-    nx2 = _clamp(nx2, 0, W - 1)
-    ny2 = _clamp(ny2, 0, H - 1)
-
-    if nx2 <= nx1:
-        nx2 = min(W - 1, nx1 + 1)
-    if ny2 <= ny1:
-        ny2 = min(H - 1, ny1 + 1)
-    return nx1, ny1, nx2, ny2
-
-
-def _largest_component_mask(mask: np.ndarray, min_keep_area: int) -> np.ndarray:
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-    if num <= 1:
-        return np.zeros_like(mask)
-    areas = stats[1:, cv2.CC_STAT_AREA]
-    largest_label = 1 + int(np.argmax(areas))
-    if stats[largest_label, cv2.CC_STAT_AREA] < min_keep_area:
-        return np.zeros_like(mask)
-    out = np.zeros_like(mask)
-    out[labels == largest_label] = 255
-    return out
-
-
-def classify_height(height_px: int, ranges):
-    if not ranges:
-        return None
-    for spec in ranges:
-        try:
-            name = str(spec.get("name"))
-            min_h = spec.get("min_h")
-            max_h = spec.get("max_h")
-        except AttributeError:
-            continue
-        if min_h is None or max_h is None:
-            continue
-        if min_h <= height_px <= max_h:
-            return name
-    return None
 
 
 def _order_box_points(pts):
@@ -552,300 +389,158 @@ def _order_box_points(pts):
     return np.array([tl, tr, br, bl], dtype="float32")
 
 
-def find_minrect_and_crop(
-    upright_bgr: np.ndarray,
-    debug_prefix: Path | None = None,
-    intensity_cfg=None,
-    extract_cfg=None,
-):
-    dbg = []
+def _iou_xyxy(box_a, box_b) -> float:
+    ax1, ay1, ax2, ay2 = [float(v) for v in box_a]
+    bx1, by1, bx2, by2 = [float(v) for v in box_b]
+    if ax2 <= ax1 or ay2 <= ay1 or bx2 <= bx1 or by2 <= by1:
+        return 0.0
+    inter_x1 = max(ax1, bx1)
+    inter_y1 = max(ay1, by1)
+    inter_x2 = min(ax2, bx2)
+    inter_y2 = min(ay2, by2)
+    inter_w = max(0.0, inter_x2 - inter_x1)
+    inter_h = max(0.0, inter_y2 - inter_y1)
+    if inter_w == 0.0 or inter_h == 0.0:
+        return 0.0
+    inter_area = inter_w * inter_h
+    area_a = (ax2 - ax1) * (ay2 - ay1)
+    area_b = (bx2 - bx1) * (by2 - by1)
+    denom = area_a + area_b - inter_area
+    if denom <= 0.0:
+        return 0.0
+    return float(inter_area / denom)
 
-    debug_dir: Optional[Path] = None
 
-    def _noop_debug_write(name: str, img: np.ndarray | None):
-        return
+def _quad_from_box(box_xyxy) -> np.ndarray:
+    x1, y1, x2, y2 = [float(v) for v in box_xyxy]
+    return np.array(
+        [
+            [x1, y1],
+            [x2, y1],
+            [x2, y2],
+            [x1, y2],
+        ],
+        dtype=np.float32,
+    )
 
-    _debug_write = _noop_debug_write
 
-    def _write_debug_summary():
-        if debug_dir is None:
-            return
-        try:
-            summary = [[str(k), repr(v)] for (k, v) in dbg]
-            (debug_dir / "debug.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-        except Exception:
-            pass
-
-    if debug_prefix is not None:
-        try:
-            debug_dir = Path(debug_prefix)
-            debug_dir.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            debug_dir = None
-        else:
-            def _debug_write(name: str, img: np.ndarray | None):
-                if img is None:
-                    return
-                try:
-                    arr = np.asarray(img)
-                    if arr.size == 0:
-                        return
-                    out_path = debug_dir / f"{name}.png"
-                    if arr.ndim == 2:
-                        cv2.imwrite(str(out_path), arr)
-                    else:
-                        cv2.imwrite(str(out_path), arr)
-                except Exception:
-                    pass
-
-    if upright_bgr is None or upright_bgr.size == 0:
-        dbg.append(("empty_input", True))
-        _debug_write("input_empty", upright_bgr)
-        _write_debug_summary()
-        return None, dbg, None
-
-    _debug_write("input", upright_bgr)
-
-    cfg = extract_cfg or {}
-    thr = int(cfg.get("thr", 200))
-    use_adaptive = bool(cfg.get("use_adaptive", False))
-    adaptive_block = int(cfg.get("adaptive_block", 25)) | 1
-    adaptive_C = int(cfg.get("adaptive_C", -10))
-    morph_kernel = int(max(1, cfg.get("morph_kernel", 5)))
-    fill_kernel = int(max(1, cfg.get("fill_kernel", 7)))
-    open_kernel = int(max(1, cfg.get("open_kernel", 15)))
-    min_keep_area = int(max(1, cfg.get("min_keep_area", 8000)))
-    use_white_filter = bool(cfg.get("use_white_filter", True))
-    v_min = int(cfg.get("v_min", 160))
-    s_max = int(cfg.get("s_max", 70))
-    post_white_margin  = int(cfg.get("post_white_margin", 15))
-    target_white_ratio = float(cfg.get("target_white_ratio", 0.6))
-    crop_margin        = float(cfg.get("crop_margin", 0.0))
-    quad_expand_frac   = float(cfg.get("quad_expand_frac", 0.0))
-    prefer_pad         = bool(cfg.get("prefer_pad_on_white_fail", False))
-    inner_band_frac    = float(cfg.get("inner_band_frac", 0.0))
-
-    h, w = upright_bgr.shape[:2]
-    gray = cv2.cvtColor(upright_bgr, cv2.COLOR_BGR2GRAY)
-
-    white_pref = None
-    if use_white_filter:
-        hsv = cv2.cvtColor(upright_bgr, cv2.COLOR_BGR2HSV)
-        lower = np.array([0, 0, v_min], dtype=np.uint8)
-        upper = np.array([179, s_max, 255], dtype=np.uint8)
-        white_pref = cv2.inRange(hsv, lower, upper)
-
-    if use_adaptive:
-        mask_raw = cv2.adaptiveThreshold(
-            gray, 255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
-            max(3, adaptive_block),
-            adaptive_C
-        )
-    else:
-        _, mask_raw = cv2.threshold(gray, thr, 255, cv2.THRESH_BINARY)
-
-    if white_pref is not None:
-        mask_raw = cv2.bitwise_and(mask_raw, white_pref)
-
-    if intensity_cfg and intensity_cfg.get("enabled"):
-        thresh = int(intensity_cfg.get("thresh", 160))
-        invert = bool(intensity_cfg.get("invert"))
-        flat = np.where(gray <= thresh, 255, 0).astype(np.uint8) if invert else np.where(gray > thresh, 255, 0).astype(np.uint8)
-        mask_raw = cv2.bitwise_and(mask_raw, flat)
-        min_ratio = float(intensity_cfg.get("min_ratio", 0.1))
-        if cv2.countNonZero(mask_raw) < max(100, int(min_ratio * h * w)):
-            dbg.append(("intensity_skip", cv2.countNonZero(mask_raw)))
-
-    _debug_write("mask_raw", mask_raw)
-    if white_pref is not None:
-        _debug_write("mask_white_pref", white_pref)
-
-    k = np.ones((morph_kernel, morph_kernel), np.uint8)
-    mask = cv2.morphologyEx(mask_raw, cv2.MORPH_CLOSE, k)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k)
-
-    ki = np.ones((fill_kernel, fill_kernel), np.uint8)
-    inv = cv2.bitwise_not(mask)
-    inv = cv2.morphologyEx(inv, cv2.MORPH_CLOSE, ki)
-    mask = cv2.bitwise_not(inv)
-
-    ko = np.ones((open_kernel, open_kernel), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, ko)
-
-    mask_clean = _largest_component_mask(mask, min_keep_area=min_keep_area)
-    if mask_clean.max() == 0:
-        dbg.append(("no_component", True))
-        _debug_write("mask_clean", mask_clean)
-        _write_debug_summary()
-        return None, dbg, None
-
-    _debug_write("mask_clean", mask_clean)
-
-    cnts, _ = cv2.findContours(mask_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    dbg.append(("contours", len(cnts)))
-    if not cnts:
-        _write_debug_summary()
-        return None, dbg, None
-
-    img_area = float(h * w)
-    min_rect_area = 0.1 * img_area
-    best_rect, best_score, best_cnt = None, -1.0, None
-
-    for c in cnts:
-        if len(c) < 4:
-            continue
-        rect = cv2.minAreaRect(c)
-        (rw, rh) = rect[1]
-        rect_area = float(max(rw * rh, 1.0))
-        if rect_area < min_rect_area:
-            continue
-        aspect = max(rw, rh) / (min(rw, rh) + 1e-6)
-        if aspect > 6.0:
-            continue
-        cnt_area = cv2.contourArea(c)
-        extent = float(cnt_area) / rect_area
-        hull_area = float(cv2.contourArea(cv2.convexHull(c))) or 1.0
-        hull_extent = float(cnt_area) / hull_area
-        coverage = rect_area / img_area
-        (cx, cy) = rect[0]
-        dx = (cx - w / 2.0) / w
-        dy = (cy - h / 2.0) / h
-        center_bonus = 1.0 - min(1.0, (dx * dx + dy * dy) ** 0.5 * 2.0)
-        slender_penalty = max(0.0, coverage - 0.82) * 2.2
-        score = (1.2 * extent) + (0.3 * center_bonus) + (0.2 * hull_extent) - 0.02 * abs(aspect - 1.4) - slender_penalty
-        if score > best_score:
-            best_score, best_rect, best_cnt = score, rect, c
-
-    if best_rect is None:
-        dbg.append(("rect_none", True))
-        _write_debug_summary()
-        return None, dbg, None
-
-    box = cv2.boxPoints(best_rect).astype('float32')
-    ordered = _order_box_points(box)
-
-    if best_cnt is not None:
-        axis_x = ordered[1] - ordered[0]
-        axis_y = ordered[3] - ordered[0]
-        width_len = float(np.linalg.norm(axis_x))
-        height_len = float(np.linalg.norm(axis_y))
-        if width_len > 1e-3 and height_len > 1e-3:
-            axis_x_unit = axis_x / width_len
-            axis_y_unit = axis_y / height_len
-            pts = best_cnt.reshape(-1, 2).astype(np.float32)
-            rel = pts - ordered[0]
-            x_coords = rel @ axis_x_unit
-            y_coords = rel @ axis_y_unit
-            x_lo, x_hi = np.quantile(x_coords, [0.02, 0.98])
-            y_lo, y_hi = np.quantile(y_coords, [0.02, 0.98])
-            x_lo = float(np.clip(x_lo, 0.0, width_len))
-            x_hi = float(np.clip(x_hi, 0.0, width_len))
-            y_lo = float(np.clip(y_lo, 0.0, height_len))
-            y_hi = float(np.clip(y_hi, 0.0, height_len))
-            if x_hi - x_lo < 0.4 * width_len:
-                pad = (width_len - (x_hi - x_lo)) * 0.5
-                x_lo = max(0.0, x_lo - pad)
-                x_hi = min(width_len, x_hi + pad)
-            if y_hi - y_lo < 0.4 * height_len:
-                pad = (height_len - (y_hi - y_lo)) * 0.5
-                y_lo = max(0.0, y_lo - pad)
-                y_hi = min(height_len, y_hi + pad)
-            pad_frac = 0.02
-            x_lo = max(0.0, x_lo - pad_frac * width_len)
-            x_hi = min(width_len, x_hi + pad_frac * width_len)
-            y_lo = max(0.0, y_lo - pad_frac * height_len)
-            y_hi = min(height_len, y_hi + pad_frac * height_len)
-            ordered = np.array([
-                ordered[0] + axis_x_unit * x_lo + axis_y_unit * y_lo,
-                ordered[0] + axis_x_unit * x_hi + axis_y_unit * y_lo,
-                ordered[0] + axis_x_unit * x_hi + axis_y_unit * y_hi,
-                ordered[0] + axis_x_unit * x_lo + axis_y_unit * y_hi,
-            ], dtype=np.float32)
-
-    axis_x = ordered[1] - ordered[0]
-    axis_y = ordered[3] - ordered[0]
-    width_len = float(np.linalg.norm(axis_x))
-    height_len = float(np.linalg.norm(axis_y))
-    if quad_expand_frac > 0 and width_len > 1e-3 and height_len > 1e-3:
-        axis_x_u = axis_x / width_len
-        axis_y_u = axis_y / height_len
-        grow_x = quad_expand_frac * width_len
-        grow_y = quad_expand_frac * height_len
-        ordered = np.array([
-            ordered[0] - axis_x_u*grow_x - axis_y_u*grow_y,
-            ordered[1] + axis_x_u*grow_x - axis_y_u*grow_y,
-            ordered[2] + axis_x_u*grow_x + axis_y_u*grow_y,
-            ordered[3] - axis_x_u*grow_x + axis_y_u*grow_y,
-        ], dtype=np.float32)
-
+def _rectify_from_quad(image_bgr: np.ndarray, quad_pts: np.ndarray):
+    if image_bgr is None or image_bgr.size == 0:
+        return None, None, None
+    if quad_pts is None or len(quad_pts) != 4:
+        return None, None, None
+    H, W = image_bgr.shape[:2]
+    quad = np.asarray(quad_pts, dtype=np.float32).copy()
+    quad[:, 0] = np.clip(quad[:, 0], 0, max(0, W - 1))
+    quad[:, 1] = np.clip(quad[:, 1], 0, max(0, H - 1))
+    ordered = _order_box_points(quad)
     widthA = np.linalg.norm(ordered[2] - ordered[3])
     widthB = np.linalg.norm(ordered[1] - ordered[0])
     heightA = np.linalg.norm(ordered[1] - ordered[2])
     heightB = np.linalg.norm(ordered[0] - ordered[3])
-    W = int(round(max(widthA, widthB)))
-    H = int(round(max(heightA, heightB)))
-    W = max(W, 1)
-    H = max(H, 1)
-    dst = np.array([[0, 0], [W - 1, 0], [W - 1, H - 1], [0, H - 1]], dtype='float32')
-    P = cv2.getPerspectiveTransform(ordered, dst)
-    roi = cv2.warpPerspective(
-        upright_bgr, P, (W, H),
+    rect_w = max(int(round(max(widthA, widthB))), 1)
+    rect_h = max(int(round(max(heightA, heightB))), 1)
+    if rect_w < 2 or rect_h < 2:
+        return None, None, None
+    dst = np.array(
+        [
+            [0, 0],
+            [rect_w - 1, 0],
+            [rect_w - 1, rect_h - 1],
+            [0, rect_h - 1],
+        ],
+        dtype=np.float32,
+    )
+    transform = cv2.getPerspectiveTransform(ordered, dst)
+    rect_img = cv2.warpPerspective(
+        image_bgr,
+        transform,
+        (rect_w, rect_h),
         flags=cv2.INTER_LINEAR,
         borderMode=cv2.BORDER_CONSTANT,
-        borderValue=(0, 0, 0)
+        borderValue=(0, 0, 0),
     )
+    return rect_img, ordered, transform
 
-    if roi.size == 0:
-        _debug_write("roi_empty", roi)
-        _write_debug_summary()
-        return None, dbg, None
 
-    gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    H2, W2 = gray_roi.shape[:2]
-    band = int(round(min(H2, W2) * inner_band_frac))
-    if band > 0 and (H2 - 2*band) > 4 and (W2 - 2*band) > 4:
-        gray_eval = gray_roi[band:-band, band:-band]
-    else:
-        gray_eval = gray_roi
+def _resolve_obb_for_detection(frame_bgr: np.ndarray, target_box, expected_cls: str | None):
+    if yolo_model is None:
+        return None
+    try:
+        results = yolo_model.predict(
+            frame_bgr,
+            imgsz=CAPTURE_IMG_SIZE,
+            conf=CAPTURE_CONF,
+            verbose=False,
+        )
+    except Exception as exc:
+        log.warning("YOLO OBB predict failed during OCR pipeline: %s", exc)
+        return None
+    if not results:
+        return None
+    pred = results[0]
+    names = getattr(yolo_model, "names", {})
+    best = None
+    best_score = 0.0
+    target = [float(v) for v in target_box]
+    obb = getattr(pred, "obb", None)
 
-    dynamic_thresh = max(0, int(gray_eval.max()) - post_white_margin)
-    th_eval = cv2.threshold(gray_eval, dynamic_thresh, 255, cv2.THRESH_BINARY)[1]
-    white_ratio = float(cv2.countNonZero(th_eval)) / float(max(th_eval.size, 1))
+    def _cls_name_from_id(idx: int) -> str:
+        if isinstance(names, dict) and idx in names:
+            return str(names[idx])
+        return str(idx)
 
-    if target_white_ratio > 0.0 and white_ratio < target_white_ratio:
-        if prefer_pad:
-            diag = int(round(np.hypot(W2, H2)))
-            pad  = max(10, diag // 30)
-            roi = cv2.copyMakeBorder(
-                roi, pad, pad, pad, pad,
-                cv2.BORDER_CONSTANT,
-                value=(0, 0, 0)
-            )
-        else:
-            dynamic_full = max(0, int(gray_roi.max()) - post_white_margin)
-            thr_full = cv2.threshold(gray_roi, dynamic_full, 255, cv2.THRESH_BINARY)[1]
-            col_ratio = thr_full.mean(axis=0) / 255.0
-            row_ratio = thr_full.mean(axis=1) / 255.0
-            cols = np.where(col_ratio >= target_white_ratio)[0]
-            rows = np.where(row_ratio >= target_white_ratio)[0]
-            if cols.size >= 2 and rows.size >= 2:
-                left = int(cols[0]); right = int(cols[-1]) + 1
-                top  = int(rows[0]); bottom = int(rows[-1]) + 1
-                margin_x = int(round(crop_margin * W2))
-                margin_y = int(round(crop_margin * H2))
-                left   = max(0, left - margin_x)
-                top    = max(0, top - margin_y)
-                right  = min(W2, right + margin_x)
-                bottom = min(H2, bottom + margin_y)
-                if right - left >= 2 and bottom - top >= 2:
-                    roi = roi[top:bottom, left:right]
+    if obb is not None and len(obb) > 0:
+        quads = obb.xyxyxyxy.detach().cpu().numpy()
+        confs = obb.conf.detach().cpu().numpy() if obb.conf is not None else np.ones(len(quads), dtype=np.float32)
+        cls_ids = obb.cls.detach().cpu().numpy().astype(int) if obb.cls is not None else np.zeros(len(quads), dtype=int)
+        for idx, quad_flat in enumerate(quads):
+            quad = quad_flat.reshape(4, 2)
+            xs = quad[:, 0]
+            ys = quad[:, 1]
+            box = [float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())]
+            iou = _iou_xyxy(box, target)
+            if iou <= 0.0:
+                continue
+            cls_name = _cls_name_from_id(cls_ids[idx])
+            score = iou
+            if expected_cls is not None and cls_name == expected_cls:
+                score += 0.05  # small preference for matching class
+            if score > best_score:
+                best_score = score
+                best = {
+                    "quad": quad.astype(np.float32),
+                    "box": box,
+                    "conf": float(confs[idx]),
+                    "cls_name": cls_name,
+                    "iou": float(iou),
+                    "source": "obb",
+                }
+    if best is None and getattr(pred, "boxes", None) is not None and len(pred.boxes) > 0:
+        boxes_xyxy = pred.boxes.xyxy.detach().cpu().numpy()
+        confs = pred.boxes.conf.detach().cpu().numpy() if pred.boxes.conf is not None else np.ones(len(boxes_xyxy), dtype=np.float32)
+        cls_ids = pred.boxes.cls.detach().cpu().numpy().astype(int) if pred.boxes.cls is not None else np.zeros(len(boxes_xyxy), dtype=int)
+        for idx, box in enumerate(boxes_xyxy):
+            iou = _iou_xyxy(box, target)
+            if iou <= 0.0:
+                continue
+            cls_name = _cls_name_from_id(cls_ids[idx])
+            score = iou
+            if expected_cls is not None and cls_name == expected_cls:
+                score += 0.05
+            if score > best_score:
+                best_score = score
+                best = {
+                    "quad": _quad_from_box(box),
+                    "box": [float(v) for v in box],
+                    "conf": float(confs[idx]),
+                    "cls_name": cls_name,
+                    "iou": float(iou),
+                    "source": "aabb",
+                }
+    return best
 
-    dbg.append(("rect_size", (int(W), int(H))))
-    dbg.append(("crop_wh", (roi.shape[1], roi.shape[0])))
-    _debug_write("roi", roi)
-    _write_debug_summary()
-    return roi, dbg, dict(ordered=ordered, transform=P)
+
 # Template selection + crop
 # ──────────────────────────────────────────────────────────────────────────────
 def select_template_path_from_class(cls_name: str) -> Path:
@@ -872,16 +567,18 @@ def load_template_rects(template_path: Path, rect_W: int, rect_H: int) -> List[D
     return rect_specs
 
 
-def crop_by_specs(rect_img: np.ndarray, rect_specs: List[Dict[str, Any]], pad: int = 4) -> Dict[str, np.ndarray]:
+def crop_by_specs(rect_img: np.ndarray, rect_specs: List[Dict[str, Any]]) -> Dict[str, np.ndarray]:
     H, W = rect_img.shape[:2]
     out: Dict[str, np.ndarray] = {}
     for spec in rect_specs:
         x, y, w, h = spec["x"], spec["y"], spec["w"], spec["h"]
         x2, y2 = x + w, y + h
-        yy1 = max(0, y - pad)
-        yy2 = min(H, y2 + pad)
-        xx1 = max(0, x - pad)
-        xx2 = min(W, x2 + pad)
+        if x < 0 or y < 0:
+            continue
+        xx1 = min(W, x)
+        yy1 = min(H, y)
+        xx2 = min(W, x2)
+        yy2 = min(H, y2)
         if yy2 <= yy1 or xx2 <= xx1:
             continue
         roi = rect_img[yy1:yy2, xx1:xx2].copy()
@@ -1007,76 +704,45 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
     H, W = frame_bgr.shape[:2]
     x1, y1, x2, y2 = det[:4]
 
-    debug_stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%f")
+    raw_det_conf = None
+    if len(det) > 4 and det[4] is not None:
+        try:
+            raw_det_conf = float(det[4])
+        except (TypeError, ValueError):
+            raw_det_conf = None
+    det_conf_value = raw_det_conf if raw_det_conf is not None else 0.0
 
     x1c, y1c, x2c, y2c = clip_box((x1, y1, x2, y2), W, H)
-    ex1, ey1, ex2, ey2 = enlarge_box_by_scale((x1c, y1c, x2c, y2c), W, H)
-    extra_top = int(0.05 * max(1, ey2 - ey1))
-    if extra_top > 0:
-        ey1 = max(0, ey1 - extra_top)
-    crop = frame_bgr[ey1:ey2, ex1:ex2].copy()
-    if crop.size == 0:
-        if DEBUG_DUMP_DIR is not None:
-            try:
-                dump_dir = DEBUG_DUMP_DIR / f"frame{_frame_idx:06d}_empty_crop_{debug_stamp}"
-                dump_dir.mkdir(parents=True, exist_ok=True)
-                info = {
-                    "stage": "empty_crop",
-                    "frame_index": _frame_idx,
-                    "det_original": [float(v) for v in det[:4]],
-                    "det_conf": float(det[4]) if len(det) > 4 else None,
-                    "det_class": cls_name,
-                    "clip_box": [int(x1c), int(y1c), int(x2c), int(y2c)],
-                    "expanded_box": [int(ex1), int(ey1), int(ex2), int(ey2)],
-                }
-                (dump_dir / "meta.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
-            except Exception as dump_err:
-                log.warning("Failed to write OCR empty-crop debug dump: %s", dump_err)
-        raise RuntimeError("Scaled crop for OCR is empty")
 
-    def _dump_rect_failure(stage: str, dbg_payload):
-        if DEBUG_DUMP_DIR is None:
-            return
+    template_cls = cls_name
+
+    quad_global: np.ndarray | None = None
+    obb_match = _resolve_obb_for_detection(frame_bgr, (x1c, y1c, x2c, y2c), cls_name)
+    if obb_match:
+        quad_global = np.asarray(obb_match.get('quad'), dtype=np.float32)
         try:
-            dump_dir = DEBUG_DUMP_DIR / f"frame{_frame_idx:06d}_{stage}_{debug_stamp}"
-            dump_dir.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(dump_dir / "crop.png"), crop)
-            try:
-                find_minrect_and_crop(
-                    crop,
-                    debug_prefix=dump_dir / "rect",
-                    intensity_cfg=INTENSITY_MASK_CFG,
-                    extract_cfg=SLIP_EXTRACT_CFG,
-                )
-            except Exception:
-                pass
-            info = {
-                "stage": stage,
-                "frame_index": _frame_idx,
-                "det_original": [float(v) for v in det[:4]],
-                "det_conf": float(det[4]) if len(det) > 4 else None,
-                "det_class": cls_name,
-                "clip_box": [int(x1c), int(y1c), int(x2c), int(y2c)],
-                "expanded_box": [int(ex1), int(ey1), int(ex2), int(ey2)],
-                "dbg": [[str(k), repr(v)] for (k, v) in (dbg_payload or [])],
-            }
-            (dump_dir / "meta.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
-        except Exception as dump_err:
-            log.warning("Failed to write OCR rect debug dump: %s", dump_err)
+            det_conf_value = float(obb_match.get('conf', det_conf_value))
+        except (TypeError, ValueError):
+            pass
+        candidate_cls = str(obb_match.get('cls_name'))
+        if candidate_cls in CLASS_TO_VARIANT:
+            template_cls = candidate_cls
 
-    rect_img, dbg, geom = find_minrect_and_crop(
-        crop,
-        intensity_cfg=INTENSITY_MASK_CFG,
-        extract_cfg=SLIP_EXTRACT_CFG,
-    )
-    if rect_img is None or rect_img.size == 0:
-        _dump_rect_failure("rect_not_found", dbg)
-        raise RuntimeError("Rectified slip region not found in detection crop.")
+    if quad_global is None:
+        quad_global = _quad_from_box((x1c, y1c, x2c, y2c))
+
+    rect_img, ordered, transform = _rectify_from_quad(frame_bgr, quad_global)
+    if rect_img is None or transform is None:
+        raise RuntimeError('Rectified slip region could not be generated.')
+    try:
+        Pinv = np.linalg.inv(transform)
+    except np.linalg.LinAlgError as exc:
+        raise RuntimeError('Rectified slip transform is not invertible.') from exc
+
+    _draw_poly(frame_bgr, quad_global, (0, 0, 255), 2)
 
     rect_w, rect_h = rect_img.shape[1], rect_img.shape[0]
-    height_label = classify_height(rect_h, HEIGHT_CLASSIFIER)
-    final_cls = height_label or cls_name
-
+    final_cls = template_cls
     if CANONICAL_SIZES and final_cls in CANONICAL_SIZES:
         Wc, Hc = CANONICAL_SIZES[final_cls]
         rect_img = cv2.resize(rect_img, (Wc, Hc), interpolation=cv2.INTER_LINEAR)
@@ -1084,100 +750,119 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
 
     tpl_path = select_template_path_from_class(final_cls)
     rect_specs = load_template_rects(tpl_path, rect_w, rect_h)
-    crops_by_name = crop_by_specs(rect_img, rect_specs, pad=TEMPLATE_CROP_PAD)
+    crops_by_name = crop_by_specs(rect_img, rect_specs)
 
-    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    stem = f"slip_{ts}"
-    overlay_path = OUT_DIR / f"{stem}.template_overlay.jpg"
+    ts = datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+    stem = f'slip_{ts}'
+    overlay_path = OUT_DIR / f'{stem}.template_overlay.jpg'
 
-    overlay_done = False
-    if OVERLAY_MODE == "rectified":
-        draw_single_overlay_on_rectified(rect_img, rect_specs, overlay_path)
-        overlay_done = True
-    else:
-        ordered = geom.get("ordered") if geom else None
-        transform = geom.get("transform") if geom else None
-        if ordered is not None and transform is not None:
-            try:
-                Pinv = np.linalg.inv(transform)
-                draw_single_overlay_on_original(
-                    original_bgr=frame_bgr,
-                    yolo_xyxy=(x1c, y1c, x2c, y2c),
-                    crop_offset_xy=(ex1, ey1),
-                    ordered_quad_in_crop=ordered,
-                    rect_specs=rect_specs,
-                    Pinv=Pinv,
-                    out_path=overlay_path,
-                )
-                overlay_done = True
-            except np.linalg.LinAlgError:
-                pass
-    if not overlay_done:
-        draw_single_overlay_on_rectified(rect_img, rect_specs, overlay_path)
-
-    fields = {}
-    clinics_in_order: List[str] = []
     for name, roi in crops_by_name.items():
         if roi is None or roi.size == 0:
             continue
-        crop_path = OUT_DIR / f"{stem}_{name}.jpg"
+        crop_path = OUT_DIR / f'{stem}_{name}.jpg'
         cv2.imwrite(str(crop_path), roi)
 
     ocr_results = ocr_clinic_fields_for_crops(crops_by_name)
-    results_by_name = {item["field"]: item for item in ocr_results}
+    results_by_name = {item['field']: item for item in ocr_results}
+
+    fields: Dict[str, Dict[str, Any]] = {}
+    clinics_in_order: List[str] = []
+    overlay_labels: Dict[str, str] = {}
+
     for spec in rect_specs:
-        name = spec["name"]
+        name = spec['name']
         entry = results_by_name.get(name)
         if not entry:
             continue
+        raw_text = entry.get('raw') or ''
+        clean_text = entry.get('text') or ''
+        matched = entry.get('fuzzy_match')
+        score = entry.get('fuzzy_score')
         fields[name] = {
-            "raw": entry.get("raw") or "",
-            "clean": entry.get("text") or "",
-            "match": entry.get("fuzzy_match"),
-            "match_score": entry.get("fuzzy_score"),
+            'raw': raw_text,
+            'clean': clean_text,
+            'match': matched,
+            'match_score': score,
         }
-        if entry.get("fuzzy_match"):
-            clinics_in_order.append(entry["fuzzy_match"])
-        elif entry.get("text"):
-            clinics_in_order.append(entry["text"])
+        label_text = ''
+        if matched:
+            clinics_in_order.append(matched)
+            if isinstance(score, (int, float)):
+                label_text = f"{matched} ({score:.2f})"
+            else:
+                label_text = matched
+        elif clean_text:
+            clinics_in_order.append(clean_text)
+            label_text = clean_text
+        overlay_labels[name] = label_text
+
+    if overlay_labels:
+        _draw_template_rects_on_original(frame_bgr, rect_specs, Pinv, label_texts=overlay_labels)
+    else:
+        _draw_template_rects_on_original(frame_bgr, rect_specs, Pinv)
+
+    _put_label(frame_bgr, ordered[0], f"{final_cls} {det_conf_value:.2f}")
+
+    overlay_done = False
+    if OVERLAY_MODE == 'rectified':
+        draw_single_overlay_on_rectified(rect_img, rect_specs, overlay_path)
+        overlay_done = True
+    else:
+        try:
+            draw_single_overlay_on_original(
+                original_bgr=frame_bgr,
+                yolo_xyxy=(x1c, y1c, x2c, y2c),
+                crop_offset_xy=(0, 0),
+                ordered_quad_in_crop=ordered,
+                rect_specs=rect_specs,
+                Pinv=Pinv,
+                out_path=overlay_path,
+            )
+            overlay_done = True
+        except Exception:
+            pass
+    if not overlay_done:
+        draw_single_overlay_on_rectified(rect_img, rect_specs, overlay_path)
 
     yolo_box = [int(v) for v in (x1c, y1c, x2c, y2c)]
     result = {
-        "capture_id": ts,
-        "yolo": {
-            "class": final_cls,
-            "conf": float(det[4]),
-            "box": yolo_box,
-            "height_px": rect_h,
-            "height_override": height_label,
+        'capture_id': ts,
+        'yolo': {
+            'class': final_cls,
+            'conf': float(det_conf_value),
+            'box': yolo_box,
+            'height_px': rect_h,
+            'height_override': None,
         },
-        "locations": clinics_in_order,
-        "clinics": clinics_in_order,
-        "fields": fields,
-        "outputs": {
-            "overlay": str(overlay_path.as_posix()),
-            "crops_dir": str(OUT_DIR.as_posix()),
+        'locations': clinics_in_order,
+        'clinics': clinics_in_order,
+        'fields': fields,
+        'outputs': {
+            'overlay': str(overlay_path.as_posix()),
+            'crops_dir': str(OUT_DIR.as_posix()),
         },
     }
-    (OUT_DIR / f"{stem}.json").write_text(json.dumps(result, indent=2))
+
+    (OUT_DIR / f'{stem}.json').write_text(json.dumps(result, indent=2))
 
     global _latest_result, _latest_result_ts
     _latest_result = {
-        "locations": result.get("locations", []),
-        "yolo": result["yolo"],
-        "capture_id": result["capture_id"],
+        'locations': result.get('locations', []),
+        'yolo': result['yolo'],
+        'capture_id': result['capture_id'],
     }
     _latest_result_ts = time.time()
-    summary_fields = {name: data.get("clean") for name, data in fields.items()}
+    summary_fields = {name: data.get('clean') for name, data in fields.items()}
     log.info(
-        "OCR capture_id=%s class=%s clinics=%s fields=%s",
-        result["capture_id"],
+        'OCR capture_id=%s class=%s clinics=%s fields=%s',
+        result['capture_id'],
         final_cls,
         clinics_in_order,
         summary_fields,
     )
 
     return result
+
 # Routes
 # ──────────────────────────────────────────────────────────────────────────────
 @router.post("/ocr")
