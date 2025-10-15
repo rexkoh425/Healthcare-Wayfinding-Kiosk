@@ -8,11 +8,13 @@ from pathlib import Path
 from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Tuple, Optional, List, Dict, Any
-# this is for USB camera
+# this is for Pi camera
 import cv2
 import numpy as np
 import pytesseract
 import logging
+from picamera2 import Picamera2
+from libcamera import controls
 
 from ultralytics import YOLO
 
@@ -25,6 +27,8 @@ CLASS_TO_VARIANT = {"1": 1, "2": 2, "3": 3}
 TEMPLATE_DIR = Path(os.environ.get("TEMPLATE_DIR", "templates"))
 OUT_DIR = Path(os.environ.get("OUT_DIR", "/data/ocr_latest/frames"))
 OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+os.environ.setdefault("PICAMERA2_USE_V4L2", "1")
 
 # Livestream detection throttling
 STREAM_DET_INTERVAL = int(os.environ.get("STREAM_DET_INTERVAL", "10"))   # detect every N frames
@@ -61,16 +65,80 @@ _latest_result_ts  = 0.0
 # Camera enable
 CAMERA_ENABLED = os.environ.get("CAMERA_ENABLED", "0") == "1"
 
-# USB camera settings
-USB_DEVICE_INDEX = int(os.environ.get("USB_DEVICE_INDEX", "0"))
-USB_WIDTH        = int(os.environ.get("USB_WIDTH", "1280"))
-USB_HEIGHT       = int(os.environ.get("USB_HEIGHT", "720"))
-USB_FPS          = int(os.environ.get("USB_FPS", "25"))
+# Pi camera settings (fixed configuration)
+PICAM_VIDEO_SIZE = (640, 480)
+PICAM_FRAME_RATE = 30
+PICAM_STILL_SIZE = (640, 480)
+PICAM_AF_MODE    = controls.AfModeEnum.Continuous
+PICAM_AF_RANGE   = controls.AfRangeEnum.Full
+PICAM_AF_SPEED   = controls.AfSpeedEnum.Normal
 
 # Stream pacing (prevents fast/slow bursts)
-TARGET_STREAM_FPS = int(os.environ.get("TARGET_STREAM_FPS", "15"))
+TARGET_STREAM_FPS = int(os.environ.get("TARGET_STREAM_FPS", "8"))
 _FRAME_PERIOD     = 1.0 / max(1, TARGET_STREAM_FPS)
-STREAM_JPEG_QUALITY = int(os.environ.get("STREAM_JPEG_QUALITY", "90"))
+STREAM_JPEG_QUALITY = int(os.environ.get("STREAM_JPEG_QUALITY", "85"))
+
+INTENSITY_MASK_CFG = {
+    "enabled": False,
+    "thresh": 215,
+    "invert": False,
+    "min_ratio": 0.15,
+}
+
+SLIP_EXTRACT_CFG = {
+    "thr": 190,
+    "use_adaptive": False,
+    "adaptive_block": 37,
+    "adaptive_C": -10,
+    "morph_kernel": 10,
+    "fill_kernel": 7,
+    "open_kernel": 15,
+    "min_keep_area": 4000,
+    "use_white_filter": True,
+    "v_min": 130,
+    "s_max": 100,
+    "post_white_margin": 10,
+    "target_white_ratio": 0.85,
+    "crop_margin": 0.03,
+    "quad_expand_frac": 0.02,
+    "prefer_pad_on_white_fail": True,
+    "inner_band_frac": 0.0,
+}
+
+HEIGHT_CLASSIFIER = [
+    {"name": "1", "min_h": 565, "max_h": 615},
+    {"name": "2", "min_h": 615, "max_h": 700},
+    {"name": "3", "min_h": 700, "max_h": 820},
+]
+
+CANONICAL_SIZES = {}
+
+OVERLAY_MODE = os.environ.get("OCR_OVERLAY_MODE", "rectified").lower()
+if OVERLAY_MODE not in {"rectified", "original"}:
+    OVERLAY_MODE = "rectified"
+
+TEMPLATE_CROP_PAD = int(os.environ.get("TEMPLATE_CROP_PAD", "4"))
+
+TESSERACT_WIN_PATH = os.environ.get("TESSERACT_WIN_PATH", "")
+
+DEBUG_DUMP_DIR_ENV = os.environ.get("OCR_DEBUG_DUMP_DIR")
+if DEBUG_DUMP_DIR_ENV:
+    DEBUG_DUMP_DIR = Path(DEBUG_DUMP_DIR_ENV)
+    DEBUG_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+else:
+    DEBUG_DUMP_DIR = None
+
+def configure_tesseract(win_path: str, logger: logging.Logger):
+    if pytesseract is None:
+        logger.warning("pytesseract not available; OCR will be skipped.")
+        return
+    if os.name == "nt" and win_path:
+        p = Path(win_path)
+        if p.exists():
+            pytesseract.pytesseract.tesseract_cmd = str(p)
+            logger.info("Using Windows Tesseract at: %s", win_path)
+        else:
+            logger.warning("Tesseract path not found: %s", win_path)
 
 INTENSITY_MASK_CFG = {
     "enabled": False,
@@ -307,55 +375,92 @@ def _update_detection_stability(det, frame_shape, timestamp: float):
 yolo_model = YOLO(YOLO_WEIGHTS, task="detect")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# FastAPI router + Camera (USB only)
+# FastAPI router + Camera (Pi camera)
 # ──────────────────────────────────────────────────────────────────────────────
 router = APIRouter()
 _camera_init_lock = Lock()
 _capture_lock     = Lock()
 
-usb_cap = None           # type: cv2.VideoCapture | None
+picam: Optional[Picamera2] = None
+_picam_video_config = None
+_picam_still_config = None
 _camera_started = False
 
-def _open_usb_camera():
-    """
-    Open a USB UVC camera. Use MJPG + tiny buffer for low latency.
-    """
-    # Prefer V4L2 backend on Linux
-    cap = cv2.VideoCapture(USB_DEVICE_INDEX, cv2.CAP_V4L2)
-    if not cap or not cap.isOpened():
-        cap = cv2.VideoCapture(USB_DEVICE_INDEX)
-    if not cap or not cap.isOpened():
-        raise HTTPException(status_code=500, detail=f"USB camera not available at index {USB_DEVICE_INDEX}")
-
-    # Best-effort property sets (some cams may ignore certain sets)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  USB_WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, USB_HEIGHT)
-    cap.set(cv2.CAP_PROP_FPS,          USB_FPS)
-
-    # Sanity-check: try one grab (don’t block if it fails)
-    ok, _ = cap.read()
-    if not ok:
-        cap.release()
-        raise HTTPException(status_code=500, detail="USB camera opened but failed to read a frame")
-
-    return cap
-
 def _ensure_camera_started():
-    """Initialise and start the USB camera lazily."""
-    global usb_cap, _camera_started
+    """Initialise and start the Pi camera lazily, retrying once on failure."""
+    global picam, _picam_video_config, _picam_still_config, _camera_started
     if not CAMERA_ENABLED:
         raise HTTPException(status_code=503, detail="Camera disabled")
 
     with _camera_init_lock:
-        if _camera_started and usb_cap is not None:
-            return usb_cap
+        def _init_camera():
+            cam = Picamera2()
+            video_cfg = cam.create_video_configuration(
+                main={"size": PICAM_VIDEO_SIZE},
+                controls={
+                    "FrameRate": PICAM_FRAME_RATE,
+                    "AfMode": PICAM_AF_MODE,
+                    "AfRange": PICAM_AF_RANGE,
+                    "AfSpeed": PICAM_AF_SPEED,
+                },
+            )
+            still_cfg = cam.create_still_configuration(
+                main={"size": PICAM_STILL_SIZE},
+                controls={
+                    "AfMode": PICAM_AF_MODE,
+                    "AfRange": PICAM_AF_RANGE,
+                    "AfSpeed": PICAM_AF_SPEED,
+                },
+            )
+            return cam, video_cfg, still_cfg
 
-        usb_cap = _open_usb_camera()
-        _camera_started = True
-        log.info(f"USB camera started (idx={USB_DEVICE_INDEX}, {USB_WIDTH}x{USB_HEIGHT}@{USB_FPS}, MJPG)")
-        return usb_cap
+        if picam is None or _picam_video_config is None:
+            picam, _picam_video_config, _picam_still_config = _init_camera()
+
+        if not _camera_started:
+            try:
+                picam.configure(_picam_video_config)
+                picam.start()
+                _camera_started = True
+                log.info(
+                    "Pi camera started (%dx%d@%d)",
+                    PICAM_VIDEO_SIZE[0],
+                    PICAM_VIDEO_SIZE[1],
+                    PICAM_FRAME_RATE,
+                )
+            except RuntimeError as exc:
+                log.error("Primary Pi camera start failed: %s", exc)
+                try:
+                    picam.close()
+                except Exception:
+                    pass
+                picam = None
+                _picam_video_config = None
+                _picam_still_config = None
+
+                picam, _picam_video_config, _picam_still_config = _init_camera()
+                try:
+                    picam.configure(_picam_video_config)
+                    picam.start()
+                    _camera_started = True
+                    log.info(
+                        "Pi camera restarted after recovery (%dx%d@%d)",
+                        PICAM_VIDEO_SIZE[0],
+                        PICAM_VIDEO_SIZE[1],
+                        PICAM_FRAME_RATE,
+                    )
+                except RuntimeError as exc2:
+                    log.error("Recovery start failed: %s", exc2)
+                    try:
+                        picam.close()
+                    except Exception:
+                        pass
+                    picam = None
+                    _picam_video_config = None
+                    _picam_still_config = None
+                    raise HTTPException(status_code=500, detail="Pi camera unavailable") from exc2
+
+        return picam
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Geometry helpers for deskew
@@ -1121,9 +1226,9 @@ async def run_ocr():
 
 def _render_stream_frame():
     """
-    Capture, annotate, and encode a single frame for the MJPEG stream (USB cam).
+    Capture, annotate, and encode a single frame for the MJPEG stream (Pi camera).
     Includes:
-      - MJPG + buffer=1 at device level (set in _open_usb_camera)
+      - PiCamera2 video stream configured for low latency
       - Pacing to TARGET_STREAM_FPS to avoid burstiness
       - YOLO on a downsized copy; boxes rescaled to original frame
     """
@@ -1135,10 +1240,11 @@ def _render_stream_frame():
     cam_handle = _ensure_camera_started()
 
     with _capture_lock:
-        ret, frame = cam_handle.read()
-        if not ret or frame is None:
-            raise RuntimeError("Failed to read from USB camera")
-        # frame is BGR
+        frame = cam_handle.capture_array("main")
+        if frame is None or frame.size == 0:
+            raise RuntimeError("Failed to capture frame from Pi camera")
+        if frame.ndim == 3 and frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
     if ROTATE_STREAM_90 and ROTATE_STREAM_180:
         log.warning("Both ROTATE_STREAM_90 and ROTATE_STREAM_180 enabled; applying single 90-degree rotation.")
@@ -1260,7 +1366,7 @@ async def stream(request: Request):
         raise HTTPException(status_code=503, detail="Camera livestream disabled")
 
     async def generate():
-        log.info("USB stream start")
+        log.info("Pi camera stream start")
         try:
             while True:
                 if await request.is_disconnected():

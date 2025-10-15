@@ -72,9 +72,11 @@ async def synthesize_wav(text: str) -> bytes:
                 str(_voice_path),
                 "--config",
                 str(_config_path),
-                "--output_file",
-                tmp_out_path,
             ]
+            length_scale = settings.PIPER_LENGTH_SCALE
+            if length_scale and abs(length_scale - 1.0) > 1e-3:
+                cmd.extend(["--length_scale", f"{length_scale:.3f}"])
+            cmd.extend(["--output_file", tmp_out_path])
             proc = subprocess.run(
                 cmd,
                 input=payload,
