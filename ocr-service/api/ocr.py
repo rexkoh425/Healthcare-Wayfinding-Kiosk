@@ -38,7 +38,7 @@ ROTATE_STREAM_90  = os.environ.get("ROTATE_STREAM_90",  "1") == "1"
 ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "0") == "1"
 
 # OCR settings
-OCR_MIN_CONF      = 0.
+OCR_MIN_CONF      = 0.88
 OCR_COOLDOWN_SEC  = 5
 _last_ocr_time    = 0.0
 
@@ -228,7 +228,7 @@ def _yolo_detect_obb(img_bgr, imgsz, conf):
         log.error(f"YOLO OBB detection error: {e}")
         return []
     
-    
+
 def normalize_frame_color(frame: np.ndarray) -> np.ndarray:
     if frame is None or frame.ndim != 3:
         return frame
