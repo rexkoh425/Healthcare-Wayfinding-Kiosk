@@ -78,7 +78,7 @@ LOCATION_CANDIDATES = [
     "Care and Counselling", "Ear, Nose and Throat Centre", "Eye Surgery Centre",
     "Surgery Centre", "Ambulatory Surgery Centre", "Endoscopy Centre", 
     "NUCOHS Dental Clinic", "Orthopaedic Centre", "Rehabilitation 1", "Ward 2",
-    "Ward 3", "Day Surgery Operating Theatre", "Ward 4", "Ward 5", "Dialysis Centre",
+    "Ward 3", "Day Surgery Operating Theatre", "Ward 4", "Ward 5",
     "Diagnostic Imaging 1",
 ]
 

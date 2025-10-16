@@ -91,6 +91,8 @@ services:
       USB_WIDTH: "1280"
       USB_HEIGHT: "720"
       USB_FPS: "30"
+      YOLO_DEBUG_DIR: /app/api/debug
+      YOLO_DEBUG_LIMIT: "50"
 
     command: >
       python3 -m uvicorn service:app
