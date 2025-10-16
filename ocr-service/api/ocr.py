@@ -38,7 +38,7 @@ ROTATE_STREAM_90  = os.environ.get("ROTATE_STREAM_90",  "1") == "1"
 ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "0") == "1"
 
 # OCR settings
-OCR_MIN_CONF      = 0.
+OCR_MIN_CONF      = 0.88
 OCR_COOLDOWN_SEC  = 5
 _last_ocr_time    = 0.0
 
@@ -78,7 +78,7 @@ LOCATION_CANDIDATES = [
     "Care and Counselling", "Ear, Nose and Throat Centre", "Eye Surgery Centre",
     "Surgery Centre", "Ambulatory Surgery Centre", "Endoscopy Centre", 
     "NUCOHS Dental Clinic", "Orthopaedic Centre", "Rehabilitation 1", "Ward 2",
-    "Ward 3", "Day Surgery Operating Theatre", "Ward 4", "Ward 5", "Dialysis Centre",
+    "Ward 3", "Day Surgery Operating Theatre", "Ward 4", "Ward 5",
     "Diagnostic Imaging 1",
 ]
 
