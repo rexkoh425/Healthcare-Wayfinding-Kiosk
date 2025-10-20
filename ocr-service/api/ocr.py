@@ -50,6 +50,12 @@ STABILITY_MIN_FRAMES  = int(os.environ.get("STABILITY_MIN_FRAMES", "2"))   # 0 t
 STABILITY_IOU_THRESH  = float(os.environ.get("STABILITY_IOU_THRESH", "0.5"))
 DET_MISS_RESET_FRAMES = int(os.environ.get("DET_MISS_RESET_FRAMES", "1"))  # reset timer as soon as detections disappear
 
+# Spiral/Y-sweep toggles
+OCR_SWEEP_ENABLED = os.environ.get("OCR_SWEEP_ENABLED", "1") == "1"  # turn sweep on/off
+OCR_SWEEP_AXIS    = os.environ.get("OCR_SWEEP_AXIS", "y").strip().lower()  # "y" (vertical only) or "xy" (full 2D grid)
+EARLY_STOP_FUZZY  = float(os.environ.get("EARLY_STOP_FUZZY", "0.98"))      # stop sweep early if fuzzy ≥ this
+
+
 # Legacy vars kept for compatibility in logs if referenced
 OCR_COOLDOWN_SEC  = 0.0
 _last_ocr_time    = 0.0
@@ -433,10 +439,13 @@ def ocr_clinic_fields_for_crops(crops: Dict[str, np.ndarray]) -> List[Dict[str, 
     return results
 
 def _run_ocr_on_detection(frame_bgr, det, cls_name):
-    """Run OCR with OBB perspective transform; returns result dict or None."""
+    """Run OCR (with optional Y-only sweep) for the live stream trigger.
+       Returns result dict or None.
+    """
     cls_name = str(cls_name)
     H, W = frame_bgr.shape[:2]
 
+    # ---- Rectify detection (OBB preferred) ----
     if isinstance(det[0], np.ndarray):  # OBB
         polygon, conf, det_cls_name = det
         if det_cls_name:
@@ -455,10 +464,10 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         M = cv2.getPerspectiveTransform(quad_global, dst_points)
         rect_img = cv2.warpPerspective(frame_bgr, M, (width, height))
 
-        x_coords = polygon[:, 0]
-        y_coords = polygon[:, 1]
+        x_coords = polygon[:, 0]; y_coords = polygon[:, 1]
         x1c, y1c, x2c, y2c = int(x_coords.min()), int(y_coords.min()), int(x_coords.max()), int(y_coords.max())
-    else:
+
+    else:  # axis-aligned
         x1, y1, x2, y2, conf, det_cls_name = det
         if det_cls_name:
             cls_name = det_cls_name
@@ -473,40 +482,46 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
     final_cls = cls_name
 
     try:
+        # ---- Load template rects (pixel coords in rectified space) ----
         tpl_path = select_template_path_from_class(final_cls)
         rect_specs = load_template_rects(tpl_path, rect_w, rect_h)
-        crops_by_name = crop_by_specs(rect_img, rect_specs, pad=TEMPLATE_CROP_PAD)
 
-        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        stem = f"slip_{ts}"
+        # ---- Decide OCR mode for STREAM: Y-only sweep or template-only ----
+        if OCR_SWEEP_ENABLED and OCR_SWEEP_AXIS == "y":
+            bigroi_path = select_bigroi_path_from_class(final_cls)  # from step 2
+            bigrois = _load_big_roi(bigroi_path)                   # normalized big-ROI per field
+            ocr_list = _ocr_fields_y_sweep(rect_img, rect_specs, rect_w, rect_h, bigrois)
+        else:
+            # No sweep (template-only) as fallback
+            ocr_list = _ocr_fields_template_only(rect_img, rect_specs, rect_w, rect_h, pad=TEMPLATE_CROP_PAD)
 
-        # Save crops
-        for name, roi in crops_by_name.items():
-            if roi is not None and roi.size > 0:
-                crop_path = OUT_DIR / f"{stem}_{name}.jpg"
-                cv2.imwrite(str(crop_path), roi)
-
-        ocr_results = ocr_clinic_fields_for_crops(crops_by_name)
-        results_by_name = {item["field"]: item for item in ocr_results}
+        # ---- Pack results per template field name, keep your existing shape ----
+        results_by_name = {item["field"]: item for item in ocr_list}
 
         fields = {}
-        clinics_in_order: List[str] = []
+        clinics_in_order = []
         for spec in rect_specs:
             name = spec["name"]
             entry = results_by_name.get(name)
             if not entry:
                 continue
-            fields[name] = {
-                "raw": entry.get("raw") or "",
-                "clean": entry.get("text") or "",
-                "match": entry.get("fuzzy_match"),
-                "match_score": entry.get("fuzzy_score"),
-            }
-            if entry.get("fuzzy_match"):
-                clinics_in_order.append(entry["fuzzy_match"])
-            elif entry.get("text"):
-                clinics_in_order.append(entry["text"])
+            clean_text = entry.get("text") or ""
+            match = entry.get("fuzzy_match")
+            score = entry.get("fuzzy_score")
 
+            fields[name] = {
+                "raw": clean_text,
+                "clean": clean_text,
+                "match": match,
+                "match_score": score,
+            }
+            if match:
+                clinics_in_order.append(match)
+            elif clean_text:
+                clinics_in_order.append(clean_text)
+
+        # ---- Assemble final result (unchanged contract) ----
+        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
         result = {
             "capture_id": ts,
             "yolo": {
@@ -520,23 +535,23 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
             "fields": fields,
         }
 
-        # Attach blur metric
+        # Attach blur metric (as before)
         global _show_blur_ema
         try:
             blur_val_now = measure_blur(frame_bgr)
-            result.setdefault("metrics", {})["blur"] = {
-                "method": BLUR_METHOD,
-                "value": float(blur_val_now)
-            }
+            result.setdefault("metrics", {})["blur"] = {"method": BLUR_METHOD, "value": float(blur_val_now)}
         except Exception:
             pass
 
+        # Optionally record that Y-sweep was used (handy for debugging)
+        result.setdefault("sweep", {})["enabled"] = bool(OCR_SWEEP_ENABLED and OCR_SWEEP_AXIS == "y")
+        if result["sweep"]["enabled"]:
+            result["sweep"]["axis"] = "y"
+            result["sweep"]["step_norm"] = SPIRAL_STEP_NORM
+
+        # Keep your latest_result cache behavior
         global _latest_result, _latest_result_ts
-        _latest_result = {
-            "locations": result.get("locations", []),
-            "yolo": result["yolo"],
-            "capture_id": result["capture_id"],
-        }
+        _latest_result = {"locations": result.get("locations", []), "yolo": result["yolo"], "capture_id": result["capture_id"]}
         _latest_result_ts = time.time()
 
         log.info("OCR capture_id=%s class=%s clinics=%s", result["capture_id"], final_cls, clinics_in_order)
@@ -822,6 +837,164 @@ def _ocr_text_and_conf(img_bgr, upscale=2.0):
     avg = float(np.mean(confs)) if confs else 0.0
     txt = " ".join([w for w in d.get("text", []) if w and w.strip()])
     return sanitize_ocr_text(txt), avg
+
+
+
+def select_bigroi_path_from_class(cls_name: str) -> Path:
+    """registration_{variant}.json in OCR_ROI_DIR for the detected class."""
+    variant = CLASS_TO_VARIANT.get(str(cls_name))
+    if not variant:
+        raise FileNotFoundError(f"No Big-ROI mapping for class '{cls_name}'")
+    p = OCR_ROI_DIR / f"registration_{variant}.json"
+    if not p.exists():
+        raise FileNotFoundError(f"Big-ROI not found: {p}")
+    return p
+
+
+# ---------- Y-only sweep building blocks ----------
+
+def _start_center_no_shrink_y(tpl_norm: dict, roi_norm: dict, eps: float = 1e-6):
+    """
+    Keep template w,h fixed; clamp center inside ROI so the box fits.
+    Returns adjusted tpl + (x_min,x_max,y_min,y_max) valid center bounds.
+    """
+    cx, cy, w, h = float(tpl_norm["x"]), float(tpl_norm["y"]), float(tpl_norm["w"]), float(tpl_norm["h"])
+    rx1, ry1, rx2, ry2 = float(roi_norm["x1"]), float(roi_norm["y1"]), float(roi_norm["x2"]), float(roi_norm["y2"])
+    rw, rh = (rx2 - rx1), (ry2 - ry1)
+    if w > rw + eps or h > rh + eps:
+        raise ValueError(f"Template (w={w:.4f}, h={h:.4f}) larger than ROI (w={rw:.4f}, h={rh:.4f}).")
+    x_min = rx1 + w/2.0; x_max = rx2 - w/2.0
+    y_min = ry1 + h/2.0; y_max = ry2 - h/2.0
+    cx = min(max(cx, x_min), x_max)
+    cy = min(max(cy, y_min), y_max)
+    return {"x": cx, "y": cy, "w": w, "h": h}, (x_min, x_max, y_min, y_max)
+
+def _y_only_sweep_order(cy0: float, y_min: float, y_max: float, step_norm: float):
+    """Return cy candidates sorted by |cy - cy0| (closest first)."""
+    import numpy as _np
+    def rdown(v):  return np.floor(v/step_norm)*step_norm
+    def rup(v):    return np.ceil(v/step_norm)*step_norm
+    ys = _np.arange(rup(y_min), rdown(y_max)+step_norm/2.0, step_norm, dtype=_np.float32)
+    if ys.size == 0:
+        return []
+    order = _np.argsort(_np.abs(ys - cy0))
+    return ys[order].tolist()
+
+def _ocr_fields_template_only(rect_img: np.ndarray, rect_specs: list, rect_w: int, rect_h: int, pad: int = 4):
+    """No sweep: OCR exactly at the template rects."""
+    out = []
+    for spec in rect_specs:
+        name, x, y, w, h = spec["name"], spec["x"], spec["y"], spec["w"], spec["h"]
+        xx1 = max(0, x - pad); yy1 = max(0, y - pad)
+        xx2 = min(rect_w, x + w + pad); yy2 = min(rect_h, y + h + pad)
+        if xx2 <= xx1 or yy2 <= yy1: 
+            continue
+        crop = rect_img[yy1:yy2, xx1:xx2]
+        text, conf = _ocr_text_and_conf(crop, upscale=UPSCALE_FOR_OCR)
+        match, score = fuzzy_match_location(text)
+        out.append({
+            "field": name, "raw": text, "text": text, "ocr_conf": round(float(conf),2),
+            "fuzzy_match": match, "fuzzy_score": round(float(score or 0.0),4), "ysweep": False
+        })
+    return out
+
+def _ocr_fields_y_sweep(rect_img: np.ndarray, rect_specs: list, rect_w: int, rect_h: int, bigrois_norm: dict):
+    """
+    Y-only sweep inside each field's ROI (if available). For fields without ROI, fall back to template-only.
+    """
+    out = []
+    for spec in rect_specs:
+        name, x, y, w, h = spec["name"], spec["x"], spec["y"], spec["w"], spec["h"]
+        roi = bigrois_norm.get(name)
+        # Template box in normalized coords:
+        tpl_norm = {
+            "x": (x + w/2.0) / rect_w,
+            "y": (y + h/2.0) / rect_h,
+            "w": w / rect_w,
+            "h": h / rect_h,
+        }
+
+        if roi is None:
+            # No ROI: template-only
+            xx1 = max(0, x); yy1 = max(0, y)
+            xx2 = min(rect_w, x + w); yy2 = min(rect_h, y + h)
+            if xx2 <= xx1 or yy2 <= yy1:
+                continue
+            crop = rect_img[yy1:yy2, xx1:xx2]
+            text, conf = _ocr_text_and_conf(crop, upscale=UPSCALE_FOR_OCR)
+            match, score = fuzzy_match_location(text)
+            out.append({
+                "field": name, "raw": text, "text": text, "ocr_conf": round(float(conf),2),
+                "fuzzy_match": match, "fuzzy_score": round(float(score or 0.0),4), "ysweep": False
+            })
+            continue
+
+        # Adjust center to fit ROI; keep width/height fixed
+        try:
+            tpl_adj, (x_min, x_max, y_min, y_max) = _start_center_no_shrink_y(tpl_norm, roi)
+        except Exception:
+            # If it cannot fit, fallback to template-only
+            xx1 = max(0, x); yy1 = max(0, y)
+            xx2 = min(rect_w, x + w); yy2 = min(rect_h, y + h)
+            if xx2 <= xx1 or yy2 <= yy1:
+                continue
+            crop = rect_img[yy1:yy2, xx1:xx2]
+            text, conf = _ocr_text_and_conf(crop, upscale=UPSCALE_FOR_OCR)
+            match, score = fuzzy_match_location(text)
+            out.append({
+                "field": name, "raw": text, "text": text, "ocr_conf": round(float(conf),2),
+                "fuzzy_match": match, "fuzzy_score": round(float(score or 0.0),4), "ysweep": False
+            })
+            continue
+
+        # Build Y candidates
+        cx_fixed = tpl_adj["x"]
+        ys = _y_only_sweep_order(tpl_adj["y"], y_min, y_max, SPIRAL_STEP_NORM)
+        w_px = int(round(tpl_adj["w"] * rect_w))
+        h_px = int(round(tpl_adj["h"] * rect_h))
+        x_px = int(round(cx_fixed * rect_w - w_px/2.0))
+        x_px = max(0, min(x_px, rect_w - 1))
+
+        best = None  # (fuzzy, conf, payload)
+        for cy in ys:
+            y_px = int(round(cy * rect_h - h_px/2.0))
+            y_px = max(0, min(y_px, rect_h - 1))
+            x2 = min(rect_w, x_px + w_px)
+            y2 = min(rect_h, y_px + h_px)
+            if x2 <= x_px or y2 <= y_px:
+                continue
+
+            crop = rect_img[y_px:y2, x_px:x2]
+            text, conf = _ocr_text_and_conf(crop, upscale=UPSCALE_FOR_OCR)
+            match, score = fuzzy_match_location(text)
+            score = float(score or 0.0); conf = float(conf or 0.0)
+            key = (score, conf)
+            if (best is None) or (key > (best[0], best[1])):
+                best = (score, conf, {
+                    "field": name, "raw": text, "text": text, "ocr_conf": round(conf,2),
+                    "fuzzy_match": match, "fuzzy_score": round(score,4), "ysweep": True,
+                    "chosen_center_norm": {"x": round(cx_fixed,4), "y": round(float(cy),4)}
+                })
+                if score >= EARLY_STOP_FUZZY:
+                    break
+
+        if best is not None:
+            out.append(best[2])
+        else:
+            # fallback if nothing valid
+            xx1 = max(0, x); yy1 = max(0, y)
+            xx2 = min(rect_w, x + w); yy2 = min(rect_h, y + h)
+            if xx2 <= xx1 or yy2 <= yy1:
+                continue
+            crop = rect_img[yy1:yy2, xx1:xx2]
+            text, conf = _ocr_text_and_conf(crop, upscale=UPSCALE_FOR_OCR)
+            match, score = fuzzy_match_location(text)
+            out.append({
+                "field": name, "raw": text, "text": text, "ocr_conf": round(float(conf or 0.0),2),
+                "fuzzy_match": match, "fuzzy_score": round(float(score or 0.0),4), "ysweep": False
+            })
+    return out
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
