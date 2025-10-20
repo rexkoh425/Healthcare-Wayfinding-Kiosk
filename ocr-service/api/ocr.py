@@ -34,6 +34,11 @@ STREAM_IMG_SIZE     = int(os.environ.get("STREAM_IMG_SIZE", "640"))
 STREAM_CONF         = float(os.environ.get("STREAM_CONF", "0.25"))
 STREAM_IOU          = float(os.environ.get("STREAM_IOU", "0.45"))
 
+# Spiral search tuning
+OCR_ROI_DIR       = Path(os.environ.get("OCR_ROI_DIR", "OCR_ROI"))
+SPIRAL_STEP_NORM  = float(os.environ.get("SPIRAL_STEP_NORM", "0.01"))
+UPSCALE_FOR_OCR   = float(os.environ.get("UPSCALE_FOR_OCR", "2.0"))
+
 # Rotation flags
 ROTATE_STREAM_90  = os.environ.get("ROTATE_STREAM_90",  "1") == "1"
 ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "0") == "1"
@@ -74,6 +79,11 @@ BLUR_MIN_LAP       = float(os.environ.get("BLUR_MIN_LAP", "45.0"))
 BLUR_MIN_TEN       = float(os.environ.get("BLUR_MIN_TEN", "30000.0"))
 BLUR_SMOOTH_ALPHA  = float(os.environ.get("BLUR_SMOOTH_ALPHA", "0.3"))
 _show_blur_ema     = None  # runtime EMA state
+
+# Exposure gating (matches the offline pipeline)
+USE_EXPO_GATE       = os.environ.get("USE_EXPO_GATE", "1") == "1"
+EXPO_P95_MAX        = float(os.environ.get("EXPO_P95_MAX", "240"))   # 95th percentile gray <= this
+EXPO_MAX_WHITE_FRAC = float(os.environ.get("EXPO_MAX_WHITE_FRAC", "0.15"))  # frac pixels >=245
 
 # Latest result cache
 _latest_result     = None
@@ -180,6 +190,7 @@ GREEN = (0, 255, 0)
 WHT   = (255, 255, 255)
 YEL   = (0, 215, 255)
 RED   = (0, 0, 255)
+CYA   = (255, 255, 0)
 
 def _put_label(img, anchor_xy, text, color=GREEN):
     x1, y1 = map(int, anchor_xy)
@@ -311,6 +322,33 @@ def measure_blur(img_bgr: np.ndarray) -> float:
 
 def format_blur_txt(val: float) -> str:
     return f"{val:.0f}" if BLUR_METHOD == "tenengrad" else f"{val:.1f}"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Exposure helpers (NEW)
+# ──────────────────────────────────────────────────────────────────────────────
+def _exposure_metrics_gray(gray: np.ndarray) -> Tuple[float, float]:
+    """Return (p95, white_frac) where white_frac is fraction of pixels >= 245."""
+    p95 = float(np.percentile(gray, 95))
+    white_frac = float((gray >= 245).mean())
+    return p95, white_frac
+
+def _roi_gray_from_det(frame_bgr: np.ndarray, det) -> Optional[np.ndarray]:
+    """Fast axis-aligned gray ROI from a detection (OBB or AABB)."""
+    H, W = frame_bgr.shape[:2]
+    if isinstance(det[0], np.ndarray):  # OBB polygon
+        poly = det[0]
+        x1 = int(max(0, np.floor(poly[:, 0].min()))); y1 = int(max(0, np.floor(poly[:, 1].min())))
+        x2 = int(min(W, np.ceil(poly[:, 0].max())));  y2 = int(min(H, np.ceil(poly[:, 1].max())))
+    else:  # AABB
+        x1, y1, x2, y2 = map(int, det[:4])
+        x1 = max(0, x1); y1 = max(0, y1)
+        x2 = min(W, x2); y2 = min(H, y2)
+    if x2 <= x1 or y2 <= y1:
+        return None
+    roi = frame_bgr[y1:y2, x1:x2]
+    if roi.size == 0:
+        return None
+    return cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # OCR core
@@ -509,12 +547,12 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         return None
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Real-time streaming with ARMED TIMER + BLUR/STABILITY gates
+# Real-time streaming with ARMED TIMER + BLUR/STABILITY/EXPOSURE gates
 # ──────────────────────────────────────────────────────────────────────────────
 _last_boxes = []
 _frame_idx  = 0
 
-# NEW: timer + stability state
+# Timer + stability state
 _ocr_pending_since = None     # when we first saw a detection (arms the timer)
 _last_best_bbox    = None     # (x1,y1,x2,y2) of last best det
 _stable_frames     = 0        # consecutive frames box stayed similar
@@ -541,6 +579,9 @@ def _render_stream_frame():
         frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
     elif ROTATE_STREAM_180:
         frame = cv2.rotate(frame, cv2.ROTATE_180)
+
+    # Keep a plain copy for exposure/metrics (no overlays)
+    plain_frame = frame.copy()
 
     # OBB detection (on interval)
     if yolo_model is not None and (_frame_idx % STREAM_DET_INTERVAL == 0):
@@ -579,6 +620,16 @@ def _render_stream_frame():
         blur_ok = blur_val >= BLUR_MIN_LAP
         blur_thresh_txt = f">={BLUR_MIN_LAP:.0f}"
 
+    # Exposure gating (NEW): compute on the detection ROI from plain frame
+    expo_ok = True
+    expo_p95 = None
+    expo_white = None
+    if best_det is not None:
+        roi_gray = _roi_gray_from_det(plain_frame, best_det)
+        if roi_gray is not None:
+            expo_p95, expo_white = _exposure_metrics_gray(roi_gray)
+            expo_ok = (expo_p95 <= EXPO_P95_MAX) and (expo_white <= EXPO_MAX_WHITE_FRAC)
+
     # ── OCR arming + stability tracking ───────────────────────────────────────
     if best_det is not None:
         curr_bbox = _bbox_from_det(best_det)
@@ -608,18 +659,24 @@ def _render_stream_frame():
     cv2.putText(frame, f"BLUR{'' if blur_ok else ' LOW'} (thr {blur_thresh_txt})",
                 (10, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.6, blur_color, 2)
 
+    # Exposure HUD line
+    expo_color = (0, 200, 0) if expo_ok else (0, 0, 255)
+    cv2.putText(frame, f"EXPO{' OK' if expo_ok else ' HIGH'}",
+                (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, expo_color, 2)
+
     if _ocr_pending_since is not None:
         time_waited = now - _ocr_pending_since
         time_left = max(0.0, OCR_ARM_DELAY_SEC - time_waited)
         cv2.putText(frame, f"OCR ARM: {time_left:.1f}s",
-                    (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, YEL, 2)
+                    (10, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.6, YEL, 2)
 
     # Conditions for OCR (do NOT affect timer)
     conditions_ok = (
         best_det is not None and
         (best_conf >= OCR_MIN_CONF) and
         blur_ok and
-        (_stable_frames >= STABILITY_MIN_FRAMES)
+        (_stable_frames >= STABILITY_MIN_FRAMES) and
+        ((not USE_EXPO_GATE) or expo_ok)
     )
     ready_by_timer = (_ocr_pending_since is not None) and ((now - _ocr_pending_since) >= OCR_ARM_DELAY_SEC)
 
@@ -628,8 +685,17 @@ def _render_stream_frame():
         try:
             result = _run_ocr_on_detection(frame.copy(), best_det, best_det[2])
             if result:
+                # attach exposure metrics to the result (to mirror the offline pipeline)
+                if expo_p95 is not None and expo_white is not None:
+                    result.setdefault("metrics", {})["exposure"] = {
+                        "p95": float(expo_p95),
+                        "white_frac": float(expo_white),
+                        "p95_max": EXPO_P95_MAX,
+                        "white_frac_max": EXPO_MAX_WHITE_FRAC
+                    }
+
                 _last_ocr_time = now
-                cv2.putText(frame, "OCR OK", (10, 92),
+                cv2.putText(frame, "OCR OK", (10, 114),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
                 # RESET timer + stability after firing
@@ -638,7 +704,7 @@ def _render_stream_frame():
                 _last_best_bbox = None
                 _det_miss_frames = 0
         except Exception as e:
-            cv2.putText(frame, "OCR ERR", (10, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED, 2)
+            cv2.putText(frame, "OCR ERR", (10, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED, 2)
             log.error(f"OCR error: {e}")
     else:
         # Show gating reason while waiting
@@ -650,9 +716,10 @@ def _render_stream_frame():
                 if best_conf < OCR_MIN_CONF: reasons.append("CONF")
                 if not blur_ok: reasons.append("BLUR")
                 if _stable_frames < STABILITY_MIN_FRAMES: reasons.append("STABLE")
+                if USE_EXPO_GATE and not expo_ok: reasons.append("EXPO")
             if reasons:
                 cv2.putText(frame, "WAIT " + "/".join(reasons),
-                            (10, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.6, YEL, 2)
+                            (10, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.6, YEL, 2)
 
     # Pace the stream output
     t_now = time.time()
@@ -672,6 +739,90 @@ def _render_stream_frame():
         b"--FRAME\r\n"
         b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
     )
+
+
+
+# OCR picture route
+
+# ── Minimal spiral OCR helpers (no debug) ─────────────────────────────────────
+import math
+
+def _order_quad_tl_tr_br_bl(pts4x2: np.ndarray) -> np.ndarray:
+    pts = np.array(pts4x2, dtype=np.float32).reshape(4,2)
+    s = pts.sum(axis=1); d = np.diff(pts, axis=1).ravel()
+    tl = np.argmin(s); br = np.argmax(s); tr = np.argmin(d); bl = np.argmax(d)
+    return np.array([pts[tl], pts[tr], pts[br], pts[bl]], dtype=np.float32)
+
+def _rectified_from_detection(img_bgr: np.ndarray, det):
+    """Return (rect_img, Minv, (rect_w, rect_h))."""
+    H, W = img_bgr.shape[:2]
+    if isinstance(det[0], np.ndarray):  # OBB
+        poly, _, _ = det
+        quad = _order_quad_tl_tr_br_bl(poly.astype(np.float32))
+        w = int(max(np.linalg.norm(quad[1]-quad[0]), np.linalg.norm(quad[2]-quad[3])))
+        h = int(max(np.linalg.norm(quad[3]-quad[0]), np.linalg.norm(quad[2]-quad[1])))
+        w = max(w, 10); h = max(h, 10)
+        dst = np.array([[0,0],[w,0],[w,h],[0,h]], dtype=np.float32)
+        M = cv2.getPerspectiveTransform(quad, dst)
+        Minv = np.linalg.inv(M)
+        rect_img = cv2.warpPerspective(img_bgr, M, (w, h))
+        return rect_img, Minv, (w, h)
+    else:                                  # AABB
+        x1,y1,x2,y2, *_ = det
+        x1,y1,x2,y2 = map(int, [x1,y1,x2,y2])
+        x1,y1 = max(0,x1), max(0,y1); x2,y2 = min(W,x2), min(H,y2)
+        rect_img = img_bgr[y1:y2, x1:x2].copy()
+        Minv = np.array([[1,0,x1],[0,1,y1],[0,0,1]], dtype=np.float32)
+        return rect_img, Minv, (x2-x1, y2-y1)
+
+def _load_template_boxes(path: Path):
+    js = json.loads(path.read_text(encoding="utf-8"))
+    return {it["name"]: {"x":float(it["x"]), "y":float(it["y"]), "w":float(it["w"]), "h":float(it["h"])} for it in js}
+
+def _load_big_roi(path: Path):
+    js = json.loads(path.read_text(encoding="utf-8"))
+    out = {}
+    for it in js:
+        nm = it["name"]
+        if all(k in it for k in ("x1","y1","x2","y2")):
+            x1,y1,x2,y2 = float(it["x1"]), float(it["y1"]), float(it["x2"]), float(it["y2"])
+        else:
+            cx,cy,w,h = float(it["x"]), float(it["y"]), float(it["w"]), float(it["h"])
+            x1,y1,x2,y2 = cx-w/2, cy-h/2, cx+w/2, cy+h/2
+        out[nm] = {"x1":max(0,x1), "y1":max(0,y1), "x2":min(1,x2), "y2":min(1,y2)}
+    return out
+
+def _start_center_no_shrink(tpl, roi, eps=1e-6):
+    cx,cy,w,h = tpl["x"], tpl["y"], tpl["w"], tpl["h"]
+    rx1,ry1,rx2,ry2 = roi["x1"], roi["y1"], roi["x2"], roi["y2"]
+    if w > (rx2-rx1)+eps or h > (ry2-ry1)+eps:
+        raise ValueError("Template larger than ROI.")
+    x_min = rx1 + w/2; x_max = rx2 - w/2
+    y_min = ry1 + h/2; y_max = ry2 - h/2
+    cx = min(max(cx, x_min), x_max); cy = min(max(cy, y_min), y_max)
+    return {"x":cx,"y":cy,"w":w,"h":h}, (x_min,x_max,y_min,y_max)
+
+def _grid_in_spiral_order(cx, cy, x_min, x_max, y_min, y_max, step):
+    def rdown(v): return math.floor(v/step)*step
+    def rup(v):   return math.ceil(v/step)*step
+    xs = np.arange(rup(x_min), rdown(x_max)+step/2, step)
+    ys = np.arange(rup(y_min), rdown(y_max)+step/2, step)
+    grid = np.array([(x,y) for y in ys for x in xs], dtype=np.float32)
+    if grid.size == 0: return []
+    idx = np.argsort((grid[:,0]-cx)**2 + (grid[:,1]-cy)**2)
+    return [tuple(grid[i]) for i in idx]
+
+def _ocr_text_and_conf(img_bgr, upscale=2.0):
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    if upscale and upscale > 1.0:
+        gray = cv2.resize(gray, (int(img_bgr.shape[1]*upscale), int(img_bgr.shape[0]*upscale)), interpolation=cv2.INTER_CUBIC)
+    bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 5)
+    d = pytesseract.image_to_data(bw, config="--oem 3 --psm 6", output_type=pytesseract.Output.DICT)
+    confs = [float(c) for c in d.get("conf", []) if c not in ("-1", -1)]
+    avg = float(np.mean(confs)) if confs else 0.0
+    txt = " ".join([w for w in d.get("text", []) if w and w.strip()])
+    return sanitize_ocr_text(txt), avg
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FastAPI Routes
@@ -701,26 +852,124 @@ async def stream(request: Request):
     )
 
 @router.post("/ocr")
-async def run_ocr():
-    # demo stub (kept)
+async def run_ocr(image_path: Optional[str] = None):
+    # 1) get image (file or camera) — reuse camera & normalize & rotate
+    if image_path:
+        img_bgr = cv2.imread(image_path)
+        if img_bgr is None:
+            raise HTTPException(status_code=400, detail=f"Cannot read image_path: {image_path}")
+    else:
+        if not CAMERA_ENABLED:
+            raise HTTPException(status_code=503, detail="Camera disabled; provide image_path")
+        cam = _ensure_camera_started()
+        with _capture_lock:
+            frame = cam.capture_array("main")
+            if frame is None or frame.size == 0:
+                raise HTTPException(status_code=500, detail="Camera capture failed")
+        img_bgr = normalize_frame_color(frame)
+        if ROTATE_STREAM_90 and ROTATE_STREAM_180:
+            # prefer 90 CCW if both set
+            img_bgr = cv2.rotate(img_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        elif ROTATE_STREAM_90:
+            img_bgr = cv2.rotate(img_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        elif ROTATE_STREAM_180:
+            img_bgr = cv2.rotate(img_bgr, cv2.ROTATE_180)
+
+    # 2) detect slips with existing model
+    res = yolo_model.predict(img_bgr, imgsz=STREAM_IMG_SIZE, conf=STREAM_CONF, iou=STREAM_IOU, verbose=False)[0]
+    dets = []
+    if hasattr(res, "obb") and res.obb is not None and getattr(res.obb, "xyxyxyxy", None) is not None:
+        xy8 = res.obb.xyxyxyxy.cpu().numpy()
+        confs = res.obb.conf.cpu().numpy()
+        clsi  = res.obb.cls.cpu().numpy().astype(int)
+        for i in range(len(xy8)):
+            poly = xy8[i].reshape(4,2).astype(np.float32)
+            c = float(confs[i]); ci = int(clsi[i])
+            cls_name = yolo_model.names.get(ci, str(ci)) if isinstance(yolo_model.names, dict) else (
+                yolo_model.names[ci] if 0 <= ci < len(yolo_model.names) else str(ci)
+            )
+            dets.append((poly, c, cls_name))
+    if not dets and hasattr(res, "boxes") and res.boxes is not None and len(res.boxes):
+        xyxy = res.boxes.xyxy.cpu().numpy()
+        confs = res.boxes.conf.cpu().numpy()
+        clsi  = res.boxes.cls.cpu().numpy().astype(int)
+        for i in range(len(xyxy)):
+            x1,y1,x2,y2 = xyxy[i].tolist()
+            c = float(confs[i]); ci = int(clsi[i])
+            cls_name = yolo_model.names.get(ci, str(ci)) if isinstance(yolo_model.names, dict) else (
+                yolo_model.names[ci] if 0 <= ci < len(yolo_model.names) else str(ci)
+            )
+            dets.append((x1,y1,x2,y2, c, cls_name))
+    if not dets:
+        raise HTTPException(status_code=422, detail="No slips detected")
+
+    best_det = max(dets, key=lambda d: d[1] if isinstance(d[0], np.ndarray) else d[4])
+    det_cls  = best_det[2] if isinstance(best_det[0], np.ndarray) else best_det[5]
+    cls_key  = str(det_cls)
+    if cls_key in {"slip1","slip2","slip3"}: cls_key = cls_key[-1]
+
+    # 3) rectify best detection
+    rect_img, Minv, (rect_w, rect_h) = _rectified_from_detection(img_bgr, best_det)
+
+    # 4) load template & big ROI by class
+    variant = CLASS_TO_VARIANT.get(cls_key)
+    if not variant:
+        raise HTTPException(status_code=422, detail=f"No template mapping for class '{det_cls}'")
+    tpl_path = TEMPLATE_DIR / f"registration_{variant}.json"
+    roi_path = OCR_ROI_DIR   / f"registration_{variant}.json"
+    if not tpl_path.exists(): raise HTTPException(status_code=500, detail=f"Template not found: {tpl_path}")
+    if not roi_path.exists(): raise HTTPException(status_code=500, detail=f"Big ROI not found: {roi_path}")
+
+    templates = _load_template_boxes(tpl_path)
+    bigrois   = _load_big_roi(roi_path)
+    names = [n for n in templates.keys() if n in bigrois]
+    if not names:
+        raise HTTPException(status_code=500, detail="No matching names between template and ROI JSON")
+
+    # 5) spiral scan per field; pick best (fuzzy then OCR conf)
+    best_by_name = {}
+    for name in names:
+        tpl_raw = templates[name]; roi = bigrois[name]
+        tpl, (x_min, x_max, y_min, y_max) = _start_center_no_shrink(tpl_raw, roi)
+        centers = _grid_in_spiral_order(tpl["x"], tpl["y"], x_min, x_max, y_min, y_max, SPIRAL_STEP_NORM)
+        w_px = int(round(tpl["w"] * rect_w)); h_px = int(round(tpl["h"] * rect_h))
+
+        for (cx, cy) in centers:
+            x = int(round(cx * rect_w - w_px/2)); y = int(round(cy * rect_h - h_px/2))
+            x = max(0, min(x, rect_w - 1)); y = max(0, min(y, rect_h - 1))
+            x2 = min(rect_w, x + w_px); y2 = min(rect_h, y + h_px)
+            if x2 <= x or y2 <= y: continue
+            crop = rect_img[y:y2, x:x2]
+            text, conf = _ocr_text_and_conf(crop, upscale=UPSCALE_FOR_OCR)
+            match, score = fuzzy_match_location(text)
+
+            row = {"name": name, "x": x, "y": y, "w": x2-x, "h": y2-y,
+                   "ocr_text": text, "ocr_conf": float(round(conf,2)),
+                   "match": match or "", "fuzzy": float(round(score,4))}
+            key = (row["fuzzy"], row["ocr_conf"])
+            cur = best_by_name.get(name)
+            if (cur is None) or (key > (cur["fuzzy"], cur["ocr_conf"])):
+                best_by_name[name] = row
+
+    if not best_by_name:
+        raise HTTPException(status_code=422, detail="OCR produced no text")
+
+    # 6) assemble response + update latest_result cache (kept minimal)
+    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    ordered = [best_by_name[k] for k in sorted(best_by_name.keys())]
+    locations = [b["match"] or b["ocr_text"] for b in ordered]
+
     result = {
-        "capture_id": "demo-capture",
-        "locations": ["Ward 2", "Orthopaedic Centre", "Clinic J"],
-        "yolo": {"class": "1", "conf": 0.99, "box": [12, 34, 200, 320]},
-        "clinics": ["Ward 2", "Orthopaedic Centre", "Clinic J"],
-        "fields": {
-            "clinic_1": {"raw": "Ward 2", "clean": "Ward 2", "match": "Ward 2", "match_score": 1.0},
-            "clinic_2": {"raw": "Orthopaedic Centre", "clean": "Orthopaedic Centre", "match": "Orthopaedic Centre", "match_score": 1.0},
-            "clinic_3": {"raw": "Clinic J", "clean": "Clinic J", "match": "Clinic J", "match_score": 1.0},
-        },
+        "capture_id": ts,
+        "yolo": {"class": str(det_cls)},
+        "best_by_name": best_by_name,
+        "locations": locations,
     }
+
     global _latest_result, _latest_result_ts
-    _latest_result = {
-        "locations": result["locations"],
-        "yolo": result["yolo"],
-        "capture_id": result["capture_id"],
-    }
+    _latest_result = {"capture_id": ts, "yolo": result["yolo"], "locations": locations}
     _latest_result_ts = time.time()
+
     return JSONResponse(content=result)
 
 @router.get("/latest_result")
