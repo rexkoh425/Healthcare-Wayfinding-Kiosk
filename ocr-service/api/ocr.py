@@ -38,11 +38,14 @@ STREAM_IOU          = float(os.environ.get("STREAM_IOU", "0.45"))
 # Spiral search tuning
 OCR_ROI_DIR       = Path(os.environ.get("OCR_ROI_DIR", "OCR_ROI"))
 SPIRAL_STEP_NORM  = float(os.environ.get("SPIRAL_STEP_NORM", "0.01"))
-UPSCALE_FOR_OCR   = float(os.environ.get("UPSCALE_FOR_OCR", "2.0"))
+UPSCALE_FOR_OCR   = float(os.environ.get("UPSCALE_FOR_OCR", "1.0"))
 
 # Rotation flags
 ROTATE_STREAM_90  = os.environ.get("ROTATE_STREAM_90",  "1") == "1"
 ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "0") == "1"
+
+# Stream-specific Big ROI directory (same filenames as normal)
+OCR_ROI_DIR_STREAM = Path(os.environ.get("OCR_ROI_DIR_STREAM", "OCR_ROI_stream"))
 
 # OCR gating (NO cooldown; we use an armed delay)
 OCR_MIN_CONF          = float(os.environ.get("OCR_MIN_CONF", "0.90"))
@@ -52,9 +55,14 @@ STABILITY_IOU_THRESH  = float(os.environ.get("STABILITY_IOU_THRESH", "0.5"))
 DET_MISS_RESET_FRAMES = int(os.environ.get("DET_MISS_RESET_FRAMES", "1"))  # reset timer as soon as detections disappear
 
 # Spiral/Y-sweep toggles
-OCR_SWEEP_ENABLED = os.environ.get("OCR_SWEEP_ENABLED", "1") == "0"  # turn sweep on/off
+# FIXED: enable when "1" (was inverted before)
+OCR_SWEEP_ENABLED = os.environ.get("OCR_SWEEP_ENABLED", "1") == "1"  # turn sweep on/off
 OCR_SWEEP_AXIS    = os.environ.get("OCR_SWEEP_AXIS", "y").strip().lower()  # "y" (vertical only) or "xy" (full 2D grid)
 EARLY_STOP_FUZZY  = float(os.environ.get("EARLY_STOP_FUZZY", "0.98"))      # stop sweep early if fuzzy ≥ this
+
+# Pre-trigger autofocus / fresh capture before OCR (used by stream)
+OCR_PRETRIGGER_FOCUS_DELAY_SEC = float(os.environ.get("OCR_PRETRIGGER_FOCUS_DELAY_SEC", "0.6"))
+OCR_PRETRIGGER_REFINE_DET      = os.environ.get("OCR_PRETRIGGER_REFINE_DET", "1") == "1"
 
 # Legacy vars kept for compatibility in logs if referenced
 OCR_COOLDOWN_SEC  = 0.0
@@ -103,7 +111,8 @@ EXPO_MAX_WHITE_FRAC = float(os.environ.get("EXPO_MAX_WHITE_FRAC", "0.15"))  # fr
 _latest_result     = None
 _latest_result_ts  = 0.0
 
-#log = logging.getLogger(__name__)
+log = logging.getLogger("ocr.api.ocr")
+log.debug("OCR module loaded")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Location matching (simplified)
@@ -126,6 +135,16 @@ def sanitize_ocr_text(value: Optional[str]) -> str:
     cleaned = str(value).replace("\r", " ").replace("\n", " ")
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
+
+def select_bigroi_path_from_class_stream(cls_name: str) -> Path:
+    variant = CLASS_TO_VARIANT.get(str(cls_name))
+    if not variant:
+        raise FileNotFoundError(f"No Big-ROI mapping for class '{cls_name}'")
+    p_stream = OCR_ROI_DIR_STREAM / f"registration_{variant}.json"
+    if p_stream.exists():
+        return p_stream
+    # fallback to normal ROI if stream file not found
+    return select_bigroi_path_from_class(cls_name)
 
 def fuzzy_match_location(text: Optional[str], threshold: float = FUZZY_MATCH_THRESHOLD) -> Tuple[Optional[str], float]:
     threshold = max(0.0, min(1.0, float(threshold)))
@@ -536,8 +555,82 @@ def ocr_clinic_fields_for_crops(crops: Dict[str, np.ndarray]) -> List[Dict[str, 
         })
     return results
 
+def _ocr_fields_xy_spiral(rect_img: np.ndarray, rect_specs: list, rect_w: int, rect_h: int, bigrois_norm: dict):
+    out = []
+    for spec in rect_specs:
+        name, x, y, w, h = spec["name"], spec["x"], spec["y"], spec["w"], spec["h"]
+
+        # normalized template box center/size in rectified space
+        tpl_norm = {
+            "x": (x + w/2.0) / rect_w,
+            "y": (y + h/2.0) / rect_h,
+            "w":  w / rect_w,
+            "h":  h / rect_h,
+        }
+
+        roi = bigrois_norm.get(name)
+        if roi is None:
+            # fallback: template-only
+            xx1, yy1 = max(0, x), max(0, y)
+            xx2, yy2 = min(rect_w, x + w), min(rect_h, y + h)
+            if xx2 > xx1 and yy2 > yy1:
+                crop = rect_img[yy1:yy2, xx1:xx2]
+                text, conf = _ocr_text_and_conf(crop, upscale=UPSCALE_FOR_OCR)
+                match, score = fuzzy_match_location(text)
+                out.append({"field": name, "raw": text, "text": text, "ocr_conf": round(float(conf or 0.0),2),
+                            "fuzzy_match": match, "fuzzy_score": round(float(score or 0.0),4), "ysweep": False})
+            continue
+
+        try:
+            tpl_adj, (x_min, x_max, y_min, y_max) = _start_center_no_shrink(tpl_norm, roi)
+        except Exception:
+            # fallback: template-only
+            xx1, yy1 = max(0, x), max(0, y)
+            xx2, yy2 = min(rect_w, x + w), min(rect_h, y + h)
+            if xx2 > xx1 and yy2 > yy1:
+                crop = rect_img[yy1:yy2, xx1:xx2]
+                text, conf = _ocr_text_and_conf(crop, upscale=UPSCALE_FOR_OCR)
+                match, score = fuzzy_match_location(text)
+                out.append({"field": name, "raw": text, "text": text, "ocr_conf": round(float(conf or 0.0),2),
+                            "fuzzy_match": match, "fuzzy_score": round(float(score or 0.0),4), "ysweep": False})
+            continue
+
+        centers = _grid_in_spiral_order(tpl_adj["x"], tpl_adj["y"], x_min, x_max, y_min, y_max, SPIRAL_STEP_NORM)
+        w_px = int(round(tpl_adj["w"] * rect_w))
+        h_px = int(round(tpl_adj["h"] * rect_h))
+
+        best = None
+        for (cx, cy) in centers:
+            x_px = int(round(cx * rect_w - w_px/2.0))
+            y_px = int(round(cy * rect_h - h_px/2.0))
+            x_px = max(0, min(x_px, rect_w - 1))
+            y_px = max(0, min(y_px, rect_h - 1))
+            x2 = min(rect_w, x_px + w_px)
+            y2 = min(rect_h, y_px + h_px)
+            if x2 <= x_px or y2 <= y_px:
+                continue
+
+            crop = rect_img[y_px:y2, x_px:x2]
+            text, conf = _ocr_text_and_conf(crop, upscale=UPSCALE_FOR_OCR)
+            match, score = fuzzy_match_location(text)
+            score = float(score or 0.0); conf = float(conf or 0.0)
+
+            key = (score, conf)
+            if (best is None) or (key > (best[0], best[1])):
+                best = (score, conf, {
+                    "field": name, "raw": text, "text": text, "ocr_conf": round(conf,2),
+                    "fuzzy_match": match, "fuzzy_score": round(score,4), "ysweep": False,
+                    "chosen_center_norm": {"x": round(float(cx),4), "y": round(float(cy),4)}
+                })
+                if EARLY_STOP_FUZZY and score >= EARLY_STOP_FUZZY:
+                    break
+
+        if best is not None:
+            out.append(best[2])
+    return out
+
 def _run_ocr_on_detection(frame_bgr, det, cls_name):
-    """Run OCR (with optional Y-only sweep) for the live stream trigger.
+    """Run OCR (with optional XY/Y sweep) for the live stream trigger.
        Returns result dict or None.
     """
     cls_name = str(cls_name)
@@ -593,11 +686,18 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         tpl_path = select_template_path_from_class(final_cls)
         rect_specs = load_template_rects(tpl_path, rect_w, rect_h)
 
-        # ---- Decide OCR mode for STREAM: Y-only sweep or template-only ----
-        if OCR_SWEEP_ENABLED and OCR_SWEEP_AXIS == "y":
-            bigroi_path = select_bigroi_path_from_class(final_cls)  # from step 2
-            bigrois = _load_big_roi(bigroi_path)                   # normalized big-ROI per field
-            ocr_list = _ocr_fields_y_sweep(rect_img, rect_specs, rect_w, rect_h, bigrois)
+        # ---- Decide OCR mode for STREAM: XY-spiral, Y-only sweep, or template-only ----
+        if OCR_SWEEP_ENABLED:
+            bigroi_path = select_bigroi_path_from_class_stream(final_cls)
+            bigrois = _load_big_roi(bigroi_path)
+
+            if OCR_SWEEP_AXIS == "xy":
+                ocr_list = _ocr_fields_xy_spiral(rect_img, rect_specs, rect_w, rect_h, bigrois)
+            elif OCR_SWEEP_AXIS == "y":
+                ocr_list = _ocr_fields_y_sweep(rect_img, rect_specs, rect_w, rect_h, bigrois)
+            else:
+                log.warning("Unknown OCR_SWEEP_AXIS=%r; using template-only", OCR_SWEEP_AXIS)
+                ocr_list = _ocr_fields_template_only(rect_img, rect_specs, rect_w, rect_h, pad=TEMPLATE_CROP_PAD)
         else:
             ocr_list = _ocr_fields_template_only(rect_img, rect_specs, rect_w, rect_h, pad=TEMPLATE_CROP_PAD)
 
@@ -639,6 +739,7 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
             "fields": fields,
         }
 
+        # add metrics
         global _show_blur_ema
         try:
             blur_val_now = measure_blur(frame_bgr)
@@ -646,11 +747,18 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         except Exception:
             pass
 
-        result.setdefault("sweep", {})["enabled"] = bool(OCR_SWEEP_ENABLED and OCR_SWEEP_AXIS == "y")
-        if result["sweep"]["enabled"]:
-            result["sweep"]["axis"] = "y"
+        # sweep metadata (and which ROI file used)
+        sweep_enabled = bool(OCR_SWEEP_ENABLED and OCR_SWEEP_AXIS in ("y", "xy"))
+        result.setdefault("sweep", {})["enabled"] = sweep_enabled
+        if sweep_enabled:
+            result["sweep"]["axis"] = OCR_SWEEP_AXIS
             result["sweep"]["step_norm"] = SPIRAL_STEP_NORM
+            try:
+                result["sweep"]["roi_file"] = str(bigroi_path)
+            except Exception:
+                pass
 
+        # update latest_result cache
         global _latest_result, _latest_result_ts
         _latest_result = {"locations": result.get("locations", []), "yolo": result["yolo"], "capture_id": result["capture_id"]}
         _latest_result_ts = time.time()
@@ -797,7 +905,11 @@ def _render_stream_frame():
     # FIRE OCR when delay elapsed AND gates satisfied
     if ready_by_timer and conditions_ok:
         try:
-            result = _run_ocr_on_detection(frame.copy(), best_det, best_det[2])
+            # Pretrigger focus + small delay + fresh capture (and optional re-detect)
+            frame_for_ocr, det_for_ocr = _pretrigger_focus_and_capture(frame, best_det)
+            det_cls_name = det_for_ocr[2] if isinstance(det_for_ocr[0], np.ndarray) else det_for_ocr[5]
+
+            result = _run_ocr_on_detection(frame_for_ocr.copy(), det_for_ocr, det_cls_name)
             if result:
                 if expo_p95 is not None and expo_white is not None:
                     result.setdefault("metrics", {})["exposure"] = {
@@ -1096,8 +1208,9 @@ def _ocr_fields_y_sweep(rect_img: np.ndarray, rect_specs: list, rect_w: int, rec
                     "fuzzy_match": match, "fuzzy_score": round(score,4), "ysweep": True,
                     "chosen_center_norm": {"x": round(cx_fixed,4), "y": round(float(cy),4)}
                 })
-                if score >= EARLY_STOP_FUZZY:
-                    break
+                if EARLY_STOP_FUZZY:
+                    if score >= EARLY_STOP_FUZZY:
+                        break
 
         if best is not None:
             out.append(best[2])
@@ -1114,6 +1227,79 @@ def _ocr_fields_y_sweep(rect_img: np.ndarray, rect_specs: list, rect_w: int, rec
                 "fuzzy_match": match, "fuzzy_score": round(float(score or 0.0),4), "ysweep": False
             })
     return out
+
+def _autofocus_once(cam, timeout=1.5):
+    try:
+        cam.set_controls({
+            "AfMode": controls.AfModeEnum.Auto,
+            "AfTrigger": controls.AfTriggerEnum.Start
+        })
+        t0 = time.time()
+        last = None
+        # Optional: wait until AF converges
+        while time.time() - t0 < timeout:
+            md = cam.capture_metadata()
+            last = md.get("AfState")
+            # Focused or locked states (names vary by version)
+            if str(last) in ("AfState.Focused", "AfState.Locked", "2", "3"):
+                break
+            time.sleep(0.05)
+        log.debug("AF state after trigger: %s", last)
+    except Exception as e:
+        log.warning("AF trigger failed: %s", e)
+
+def _pretrigger_focus_and_capture(current_frame: np.ndarray, current_det):
+    """
+    Optional pre-trigger step to help AF/AE settle:
+      - trigger AF once (inside picam lock)
+      - sleep for OCR_PRETRIGGER_FOCUS_DELAY_SEC
+      - recapture a fresh frame
+      - optionally re-detect to refine the best box
+    Returns: (frame_for_ocr, det_for_ocr)
+    """
+    frame_for_ocr = current_frame
+    det_for_ocr = current_det
+
+    if not CAMERA_ENABLED:
+        return frame_for_ocr, det_for_ocr
+
+    try:
+        cam = _ensure_camera_started()
+
+        # Kick AF quickly, inside the short-lived camera lock
+        if OCR_PRETRIGGER_REFINE_DET or OCR_PRETRIGGER_FOCUS_DELAY_SEC > 0:
+            try:
+                with _picam_lock:
+                    _autofocus_once(cam, timeout=max(0.1, OCR_PRETRIGGER_FOCUS_DELAY_SEC * 0.8))
+            except Exception as e:
+                log.debug(f"Pretrigger AF skipped: {e}")
+
+        # Give AF/AE a brief moment to settle
+        if OCR_PRETRIGGER_FOCUS_DELAY_SEC > 0:
+            time.sleep(OCR_PRETRIGGER_FOCUS_DELAY_SEC)
+
+        # Re-capture a fresh frame for OCR
+        fresh = _capture_frame_array("main")
+        fresh = normalize_frame_color(fresh)
+        if ROTATE_STREAM_90 and ROTATE_STREAM_180:
+            fresh = cv2.rotate(fresh, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        elif ROTATE_STREAM_90:
+            fresh = cv2.rotate(fresh, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        elif ROTATE_STREAM_180:
+            fresh = cv2.rotate(fresh, cv2.ROTATE_180)
+
+        frame_for_ocr = fresh
+
+        # Optionally refine detection on the fresh frame
+        if OCR_PRETRIGGER_REFINE_DET:
+            boxes = _yolo_detect_obb(fresh, STREAM_IMG_SIZE, STREAM_CONF)
+            if boxes:
+                det_for_ocr = max(boxes, key=lambda x: x[1])
+
+    except Exception as e:
+        log.warning(f"Pretrigger focus/capture failed; using current frame: {e}")
+
+    return frame_for_ocr, det_for_ocr
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FastAPI Routes
