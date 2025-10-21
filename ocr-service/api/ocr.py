@@ -75,8 +75,13 @@ _FRAME_PERIOD       = 1.0 / max(1, TARGET_STREAM_FPS)
 STREAM_JPEG_QUALITY = int(os.environ.get("STREAM_JPEG_QUALITY", "85"))
 PICAM_COLOR_SPACE   = os.environ.get("PICAM_COLOR_SPACE", "RGB").strip().upper()
 
-# Overlay settings (NEW)
+# Overlay settings
 STREAM_DEBUG_OVERLAY = os.environ.get("STREAM_DEBUG_OVERLAY", "1") == "1"
+
+# Aspect-ratio classification settings (NEW)
+USE_ASPECT_RATIO_CLASS = os.environ.get("USE_ASPECT_RATIO_CLASS", "0") == "1"
+ASPECT_RATIO_DIR  = Path(os.environ.get("ASPECT_RATIO_DIR", "aspect_ratio"))
+ASPECT_RATIO_FILE = ASPECT_RATIO_DIR / os.environ.get("ASPECT_RATIO_FILE", "aspect_ratio.json")
 
 TEMPLATE_CROP_PAD    = int(os.environ.get("TEMPLATE_CROP_PAD", "4"))
 TESSERACT_WIN_PATH   = os.environ.get("TESSERACT_WIN_PATH", "")
@@ -140,6 +145,51 @@ def fuzzy_match_location(text: Optional[str], threshold: float = FUZZY_MATCH_THR
     if best_score < threshold:
         return None, best_score
     return best_name, best_score
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Aspect-ratio class mapping (NEW)
+# ──────────────────────────────────────────────────────────────────────────────
+_aspect_ratio_bounds: Optional[Dict[str, Tuple[float, float]]] = None
+
+def _load_aspect_ratio_bounds(path: Path) -> Dict[str, Tuple[float, float]]:
+    js = json.loads(path.read_text(encoding="utf-8"))
+    bounds: Dict[str, Tuple[float, float]] = {}
+    for k, v in js.items():
+        lo = float(v["lower"])
+        hi = float(v["upper"])
+        bounds[str(k)] = (lo, hi)
+    # Optional: sanity check for overlap (non-fatal log)
+    items = [(k, *bounds[k]) for k in bounds]
+    for i in range(len(items)):
+        ki, li, ui = items[i]
+        for j in range(i+1, len(items)):
+            kj, lj, uj = items[j]
+            if max(li, lj) < min(ui, uj):
+                log.warning("Aspect ratio ranges overlap: %s[%s,%s] vs %s[%s,%s]", ki, li, ui, kj, lj, uj)
+    return bounds
+
+def _get_aspect_ratio_bounds() -> Dict[str, Tuple[float, float]]:
+    global _aspect_ratio_bounds
+    if _aspect_ratio_bounds is None:
+        if not ASPECT_RATIO_FILE.exists():
+            raise FileNotFoundError(f"Aspect ratio file not found: {ASPECT_RATIO_FILE}")
+        _aspect_ratio_bounds = _load_aspect_ratio_bounds(ASPECT_RATIO_FILE)
+    return _aspect_ratio_bounds
+
+def classify_by_aspect_ratio(height_px: int, width_px: int) -> str:
+    if width_px <= 0:
+        raise ValueError("Width must be > 0 for aspect ratio classification")
+    ratio = float(height_px) / float(width_px)
+    bounds = _get_aspect_ratio_bounds()
+    # Prefer left-closed, right-open intervals [lo, hi)
+    for cls_key, (lo, hi) in bounds.items():
+        if ratio >= lo and ratio < hi:
+            return str(cls_key)
+    # If still not found, allow equality on upper edge (in case of final bin)
+    for cls_key, (lo, hi) in bounds.items():
+        if abs(ratio - hi) < 1e-9:
+            return str(cls_key)
+    raise ValueError(f"Aspect ratio {ratio:.6f} not covered by any class bounds")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # YOLO OBB Model
@@ -482,6 +532,8 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         x_coords = polygon[:, 0]; y_coords = polygon[:, 1]
         x1c, y1c, x2c, y2c = int(x_coords.min()), int(y_coords.min()), int(x_coords.max()), int(y_coords.max())
 
+        rect_w, rect_h = width, height
+
     else:  # axis-aligned
         x1, y1, x2, y2, conf, det_cls_name = det
         if det_cls_name:
@@ -489,12 +541,19 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         x1c, y1c, x2c, y2c = int(x1), int(y1), int(x2), int(y2)
         rect_img = frame_bgr[max(0,y1c):min(H,y2c), max(0,x1c):min(W,x2c)].copy()
         det_conf_value = float(conf)
+        rect_h, rect_w = rect_img.shape[:2]
 
     if rect_img.size == 0:
         return None
 
-    rect_h, rect_w = rect_img.shape[:2]
+    # ---- Choose class by aspect ratio if enabled ----
     final_cls = cls_name
+    try:
+        if USE_ASPECT_RATIO_CLASS:
+            final_cls = classify_by_aspect_ratio(rect_h, rect_w)
+    except Exception as e:
+        log.error(f"Aspect-ratio classification error: {e}")
+        return None
 
     try:
         # ---- Load template rects (pixel coords in rectified space) ----
@@ -1082,16 +1141,25 @@ async def run_ocr(image_path: Optional[str] = None):
 
     best_det = max(dets, key=lambda d: d[1] if isinstance(d[0], np.ndarray) else d[4])
     det_cls  = best_det[2] if isinstance(best_det[0], np.ndarray) else best_det[5]
-    cls_key  = str(det_cls)
-    if cls_key in {"slip1","slip2","slip3"}: cls_key = cls_key[-1]
 
     # 3) rectify best detection
     rect_img, Minv, (rect_w, rect_h) = _rectified_from_detection(img_bgr, best_det)
 
-    # 4) load template & big ROI by class
+    # 4) choose class: by aspect ratio if enabled, else use detector class (normalized to "1","2","3")
+    if USE_ASPECT_RATIO_CLASS:
+        try:
+            cls_key = classify_by_aspect_ratio(rect_h, rect_w)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Aspect ratio classification failed: {e}")
+    else:
+        cls_key = str(det_cls)
+        if cls_key in {"slip1","slip2","slip3"}:
+            cls_key = cls_key[-1]
+
+    # 5) load template & big ROI by class
     variant = CLASS_TO_VARIANT.get(cls_key)
     if not variant:
-        raise HTTPException(status_code=422, detail=f"No template mapping for class '{det_cls}'")
+        raise HTTPException(status_code=422, detail=f"No template mapping for class '{cls_key}'")
     tpl_path = TEMPLATE_DIR / f"registration_{variant}.json"
     roi_path = OCR_ROI_DIR   / f"registration_{variant}.json"
     if not tpl_path.exists(): raise HTTPException(status_code=500, detail=f"Template not found: {tpl_path}")
@@ -1103,7 +1171,7 @@ async def run_ocr(image_path: Optional[str] = None):
     if not names:
         raise HTTPException(status_code=500, detail="No matching names between template and ROI JSON")
 
-    # 5) spiral scan per field; pick best (fuzzy then OCR conf)
+    # 6) spiral scan per field; pick best (fuzzy then OCR conf)
     best_by_name = {}
     for name in names:
         tpl_raw = templates[name]; roi = bigrois[name]
@@ -1131,14 +1199,14 @@ async def run_ocr(image_path: Optional[str] = None):
     if not best_by_name:
         raise HTTPException(status_code=422, detail="OCR produced no text")
 
-    # 6) assemble response + update latest_result cache (kept minimal)
+    # 7) assemble response + update latest_result cache (kept minimal)
     ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     ordered = [best_by_name[k] for k in sorted(best_by_name.keys())]
     locations = [b["match"] or b["ocr_text"] for b in ordered]
 
     result = {
         "capture_id": ts,
-        "yolo": {"class": str(det_cls)},
+        "yolo": {"class": str(cls_key)},
         "best_by_name": best_by_name,
         "locations": locations,
     }
