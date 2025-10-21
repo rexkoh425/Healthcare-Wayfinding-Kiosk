@@ -1,9 +1,10 @@
+"use client";
+
 import React, { useEffect, useRef, useState } from "react";
 import { Search, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useRouter } from "next/navigation";
-import { useTranslation } from "react-i18next";
 import Spinner from "@/components/ui/Spinner";
 import useWebSocket from "@/lib/useWebSocket";
 
@@ -23,7 +24,6 @@ function resolveOcrBase(): string {
 
 const CameraScreen: React.FC = () => {
   const router = useRouter();
-  const { t } = useTranslation();
   const { send } = useWebSocket();
 
   const [apiBase, setApiBase] = useState<string>("");
@@ -57,7 +57,9 @@ const CameraScreen: React.FC = () => {
 
     const pollLatest = async () => {
       try {
-        const response = await fetch(`${apiBase}/latest_result`, { cache: "no-store" });
+        const response = await fetch(`${apiBase}/latest_result`, {
+          cache: "no-store",
+        });
         if (!response.ok) {
           return;
         }
@@ -69,9 +71,13 @@ const CameraScreen: React.FC = () => {
           return;
         }
         lastSeenTs = payload.updated_at;
-        const locations: string[] = Array.isArray(payload.data?.locations) ? payload.data.locations : [];
+        const locations: string[] = Array.isArray(payload.data?.locations)
+          ? payload.data.locations
+          : [];
         if (locations.length > 0) {
-          const params = new URLSearchParams({ locations: JSON.stringify(locations) });
+          const params = new URLSearchParams({
+            locations: JSON.stringify(locations),
+          });
           router.push(`/destination?${params.toString()}`);
         }
       } catch (error) {
@@ -123,11 +129,17 @@ const CameraScreen: React.FC = () => {
         throw new Error(`OCR request failed: ${response.status}`);
       }
       const payload = await response.json();
-      const locations: string[] = Array.isArray(payload.locations) ? payload.locations : [];
+      const locations: string[] = Array.isArray(payload.locations)
+        ? payload.locations
+        : [];
       if (locations.length === 0) {
-        alert("No destination detected. Please adjust the document and try again.");
+        alert(
+          "No destination detected. Please adjust the document and try again."
+        );
       } else {
-        const params = new URLSearchParams({ locations: JSON.stringify(locations) });
+        const params = new URLSearchParams({
+          locations: JSON.stringify(locations),
+        });
         router.push(`/destination?${params.toString()}`);
       }
     } catch (error) {
@@ -147,9 +159,11 @@ const CameraScreen: React.FC = () => {
     setStreamUrl("");
     send({ type: "action", action: "idle" });
     if (apiBase) {
-      fetch(`${apiBase}/latest_result/reset`, { method: "POST" }).catch((error) => {
-        console.warn("Failed to reset latest OCR result on back", error);
-      });
+      fetch(`${apiBase}/latest_result/reset`, { method: "POST" }).catch(
+        (error) => {
+          console.warn("Failed to reset latest OCR result on back", error);
+        }
+      );
     }
     router.replace("/");
     router.refresh();
@@ -163,7 +177,7 @@ const CameraScreen: React.FC = () => {
             <FileText size={48} className="text-hospital-teal" />
           </div>
           <p className="text-hospital-blue-gray/70 text-xl max-w-xl mx-auto">
-            {t("camera.description")}
+            Position your registration slip within the frame
           </p>
         </div>
 
@@ -186,13 +200,17 @@ const CameraScreen: React.FC = () => {
             size="lg"
             disabled={loading}
             className={`relative bg-hospital-teal text-white py-6 text-lg kiosk-button ${
-              loading ? "cursor-not-allowed opacity-80" : "hover:bg-hospital-teal/90"
+              loading
+                ? "cursor-not-allowed opacity-80"
+                : "hover:bg-hospital-teal/90"
             }`}
           >
-            {loading ? <Spinner size={28} /> : (
+            {loading ? (
+              <Spinner size={28} />
+            ) : (
               <>
                 <Search className="mr-2 h-5 w-5" />
-                {t("camera.scanDocument")}
+                Scan Registration Slip
               </>
             )}
           </Button>
@@ -205,7 +223,7 @@ const CameraScreen: React.FC = () => {
             className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
             disabled={loading}
           >
-            {t("common.back")}
+            Back
           </Button>
         </div>
       </Card>

@@ -1,8 +1,9 @@
+"use client";
+
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslation } from "react-i18next";
 import useWebSocket from "@/lib/useWebSocket";
 import { MedicalIcon, MedicalIconType } from "@/components/ui/MedicalIcons";
 import Image from "next/image";
@@ -59,7 +60,6 @@ interface InstructionRecord {
 
 const RfidScreen: React.FC = () => {
   const router = useRouter();
-  const { t } = useTranslation();
   const { send } = useWebSocket();
   const searchParams = useSearchParams();
 
@@ -84,7 +84,7 @@ const RfidScreen: React.FC = () => {
           `${baseUrl}/destinations/?name=${encodeURIComponent(dest)}`
         );
         if (!res.ok) throw new Error("Failed to fetch destination info");
-        const data = await res.json();
+        const data: { icon?: string; unitNumber?: string } = await res.json();
         setIcon(data.icon || null);
         setUnitNumber(data.unitNumber || null);
       } catch (err) {
@@ -94,12 +94,20 @@ const RfidScreen: React.FC = () => {
       }
     };
     fetchDestinationInfo();
-  }, [dest]);
+  }, [dest, baseUrl]);
 
   // Fetch instructions, play audio, send subtitle
   useEffect(() => {
     if (!dest) return;
     let isCancelled = false;
+
+    const isInstructionRecord = (item: unknown): item is InstructionRecord => {
+      if (typeof item !== "object" || item === null) return false;
+      const rec = item as Record<string, unknown>;
+      return (
+        typeof rec.location === "string" && typeof rec.directions === "string"
+      );
+    };
 
     const fetchAndSpeak = async () => {
       send({ type: "action", action: "hear" });
@@ -116,11 +124,7 @@ const RfidScreen: React.FC = () => {
           throw new Error("Invalid instructions payload");
         }
 
-        const instructions = payload.filter(
-          (item: any): item is InstructionRecord =>
-            typeof item?.location === "string" &&
-            typeof item?.directions === "string"
-        );
+        const instructions = payload.filter(isInstructionRecord);
 
         const normalized = dest.trim().toLowerCase();
         const match = instructions.find(
@@ -214,7 +218,7 @@ const RfidScreen: React.FC = () => {
         audioRef.current = null;
       }
     };
-  }, [dest]);
+  }, [dest, send]);
 
   useEffect(() => {
     async function handleTags() {
@@ -260,7 +264,7 @@ const RfidScreen: React.FC = () => {
       }
     }
     handleTags();
-  }, []);
+  }, [baseUrl, dest]);
 
   // useEffect(() => {
   //   // Only start the timer when the collection screen is visible (`dispensing` is false)

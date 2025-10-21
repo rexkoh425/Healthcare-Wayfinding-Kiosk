@@ -196,6 +196,8 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
                             <Check
                               className="w-5 h-5 text-hospital-teal"
                               strokeWidth={3}
+                              aria-hidden="true"
+                              focusable="false"
                             />
                           </div>
                         </div>
@@ -210,7 +212,8 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
             {selectedDestination && !submitting && (
               <div className="mb-6 p-4 rounded-lg bg-hospital-teal/10 border border-hospital-teal/30">
                 <p className="text-hospital-teal font-medium">
-                  ✓ {selectedDestination} selected. Tap "Continue" to proceed.
+                  ✓ {selectedDestination} selected. Tap &quot;Continue&quot; to
+                  proceed.
                 </p>
               </div>
             )}

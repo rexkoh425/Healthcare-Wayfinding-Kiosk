@@ -1,5 +1,14 @@
 # Wayfinding Kiosk
 
+## To run the production build
+
+```
+rm -rf .next node_modules
+npm install
+npm run build
+npm run start
+```
+
 ## Setup & Installation
 
 Clone the repository.
@@ -132,6 +141,7 @@ To view how the app will look like in your browser with the dimensions of an iPa
 ## RFID
 
 Setup
+
 ```bash
 cd rfid
 sudo apt update
@@ -143,10 +153,13 @@ sudo .venv/bin/python rfidv1.py
 ```
 
 To find the RFID device info:
+
 ```bash
 cat /proc/bus/input/devices
 ```
-Should look something like this 
+
+Should look something like this
+
 ```bash
 I: Bus=0003 Vendor=ffff Product=0035 Version=0110
 N: Name="ARM CM0 USB HID Keyboard"
@@ -155,7 +168,8 @@ S: Sysfs=/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-
 ...
 ```
 
-Running Docker File 
+Running Docker File
+
 ```bash
 docker build -t rfidimage .
 docker run --rm \
@@ -164,8 +178,8 @@ docker run --rm \
     rfidimage
 ```
 
+## Clearing Space in Rpi
 
-## Clearing Space in Rpi 
 ```bash
 docker compose up --build #build the docker image
 docker builder prune --filter "until=2h" #removes previous docker images
