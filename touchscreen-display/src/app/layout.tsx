@@ -1,8 +1,4 @@
-"use client";
-
 import React from "react";
-import { I18nextProvider } from "react-i18next";
-import i18n from "@/i18n";
 import KioskLayout from "@/components/layouts/KioskLayout";
 import "./globals.css";
 
@@ -13,10 +9,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head />
       <body>
-        <I18nextProvider i18n={i18n}>
-          <KioskLayout>{children}</KioskLayout>
-        </I18nextProvider>
+        <KioskLayout>{children}</KioskLayout>
       </body>
     </html>
   );

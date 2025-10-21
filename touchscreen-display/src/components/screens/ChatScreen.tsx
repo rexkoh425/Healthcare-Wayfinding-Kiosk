@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import useWebSocket from "@/lib/useWebSocket";
@@ -24,9 +23,21 @@ function resolveChatBase(): string {
   return `${protocol}://${window.location.hostname}:8001`;
 }
 
+interface LLMPayload {
+  response_text?: string | null;
+  locations?: unknown;
+  intent?: string | null;
+}
+
+interface TalkResponse {
+  transcript?: string | null;
+  llm?: LLMPayload | null;
+  audio_wav_b64?: string | null;
+  [key: string]: unknown;
+}
+
 const ChatScreen: React.FC = () => {
   const router = useRouter();
-  const { t, i18n } = useTranslation();
   const { send } = useWebSocket();
 
   const [status, setStatus] = useState<Status>("idle");
@@ -102,6 +113,16 @@ const ChatScreen: React.FC = () => {
     chunksRef.current = [];
   };
 
+  function getErrorMessage(err: unknown, fallback = "Unknown error"): string {
+    if (!err) return fallback;
+    if (typeof err === "string") return err;
+    if (typeof err === "object" && "message" in err) {
+      const msg = (err as { message?: unknown }).message;
+      if (typeof msg === "string") return msg;
+    }
+    return fallback;
+  }
+
   const startRecording = async () => {
     if (status !== "idle" || isBusy) {
       return;
@@ -132,7 +153,7 @@ const ChatScreen: React.FC = () => {
         formData.append("audio", blob, "speech.webm");
         formData.append("session_id", SESSION_ID);
         formData.append("return_mode", "json");
-        formData.append("language", i18n.language || "en");
+        formData.append("language", "en");
 
         try {
           const response = await fetch(`${apiBase}/talk-voice`, {
@@ -144,10 +165,15 @@ const ChatScreen: React.FC = () => {
           }
 
           const raw = await response.text();
-          let payload: any;
+          let payload: TalkResponse | null = null;
           try {
-            payload = JSON.parse(raw);
-          } catch (parseError) {
+            const parsed = JSON.parse(raw);
+            if (typeof parsed === "object" && parsed !== null) {
+              payload = parsed as TalkResponse;
+            } else {
+              throw new Error("Parsed payload is not an object");
+            }
+          } catch {
             throw new Error(`Invalid JSON payload: ${raw.slice(0, 200)}`);
           }
 
@@ -159,14 +185,14 @@ const ChatScreen: React.FC = () => {
 
           // Send transcript to server for hologram subtitles
           if (
-            typeof payload?.llm.response_text === "string" &&
+            typeof payload?.llm?.response_text === "string" &&
             payload.llm.response_text.trim().length > 0
           ) {
             send({ type: "subtitle", text: payload.llm.response_text.trim() });
           }
 
           const locations: string[] = Array.isArray(payload?.llm?.locations)
-            ? payload.llm.locations.filter(
+            ? (payload!.llm!.locations as unknown[]).filter(
                 (item: unknown): item is string =>
                   typeof item === "string" && item.trim().length > 0
               )
@@ -217,10 +243,12 @@ const ChatScreen: React.FC = () => {
 
           try {
             await audio.play();
-          } catch (playError: any) {
+          } catch (playError) {
             URL.revokeObjectURL(audioUrl);
             setStatus("idle");
-            setError(playError?.message ?? "Playback blocked by the browser");
+            setError(
+              getErrorMessage(playError, "Playback blocked by the browser")
+            );
             if (shouldNavigate) {
               const params = new URLSearchParams({
                 locations: JSON.stringify(uniqueLocations),
@@ -228,21 +256,24 @@ const ChatScreen: React.FC = () => {
               router.push(`/destination?${params.toString()}`);
             }
           }
-        } catch (requestError: any) {
+        } catch (requestError) {
           console.error("Chat screen error", requestError);
           setStatus("idle");
           setError(
-            requestError?.message ?? "Failed to contact the chatbot service"
+            getErrorMessage(
+              requestError,
+              "Failed to contact the chatbot service"
+            )
           );
         }
       };
 
       recorder.start();
       setStatus("recording");
-    } catch (mediaError: any) {
+    } catch (mediaError) {
       cleanupStream();
       setStatus("idle");
-      setError(mediaError?.message ?? "Microphone access denied");
+      setError(getErrorMessage(mediaError, "Microphone access denied"));
     }
   };
 
@@ -276,6 +307,8 @@ const ChatScreen: React.FC = () => {
             className={`inline-flex items-center gap-3 px-6 py-3 rounded-full ${currentConfig.bgColor} shadow-lg transition-all duration-300`}
           >
             <Icon
+              aria-hidden="true"
+              focusable="false"
               className={`w-6 h-6 ${currentConfig.iconColor} ${currentConfig.pulseClass}`}
             />
             <span className="text-white font-semibold text-lg">
@@ -291,17 +324,36 @@ const ChatScreen: React.FC = () => {
         <div className="flex flex-col items-center gap-6">
           <button
             type="button"
-            onMouseDown={startRecording}
-            onMouseUp={stopRecording}
-            onMouseLeave={stopRecording}
-            onTouchStart={(event) => {
-              event.preventDefault();
+            onMouseDown={(e) => {
+              e.preventDefault();
               startRecording();
             }}
-            onTouchEnd={(event) => {
-              event.preventDefault();
+            onMouseUp={(e) => {
+              e.preventDefault();
               stopRecording();
             }}
+            onMouseLeave={() => {
+              if (status === "recording") stopRecording();
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              startRecording();
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              stopRecording();
+            }}
+            onTouchCancel={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              stopRecording();
+            }}
+            // prevent the browser’s “right-click” or “long-press” context menu
+            onContextMenu={(e) => e.preventDefault()}
+            // prevent long-press gesture detection on touch devices
+            style={{ WebkitTouchCallout: "none", userSelect: "none" }}
             disabled={isBusy}
             className={`relative group transition-all duration-300 ${
               isBusy
@@ -321,6 +373,8 @@ const ChatScreen: React.FC = () => {
               className={`relative w-48 h-48 rounded-full ${currentConfig.bgColor} shadow-2xl flex items-center justify-center border-4 ${currentConfig.borderColor} transition-all duration-300`}
             >
               <Icon
+                aria-hidden="true"
+                focusable="false"
                 className={`w-24 h-24 ${currentConfig.iconColor} ${currentConfig.pulseClass}`}
               />
             </div>
@@ -354,7 +408,7 @@ const ChatScreen: React.FC = () => {
               You asked:
             </p>
             <p className="text-lg text-hospital-blue-gray italic">
-              "{transcript}"
+              &quot;{transcript}&quot;
             </p>
           </div>
         )}
@@ -390,7 +444,7 @@ const ChatScreen: React.FC = () => {
             onClick={handleBack}
             className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
           >
-            {t("common.back")}
+            Back
           </Button>
         </div>
       </Card>

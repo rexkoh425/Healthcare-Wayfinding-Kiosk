@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useRouter, useSearchParams } from "next/navigation";
 import useWebSocket from "@/lib/useWebSocket";
+import { Check, MapPin } from "lucide-react";
 
 interface DestinationConfirmationProps {
   locations?: string[];
@@ -92,16 +93,20 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
       if (prev && destinations.includes(prev)) {
         return prev;
       }
-      return destinations[destinations.length - 1];
+      return "";
     });
   }, [destinations]);
 
-  const handleDestinationSelect = (destination: string) => {
-    if (!destination || submitting) {
+  const handleDestinationClick = (destination: string) => {
+    if (submitting) return;
+    setSelectedDestination(destination);
+  };
+
+  const handleConfirm = () => {
+    if (!selectedDestination || submitting) {
       return;
     }
 
-    setSelectedDestination(destination);
     setSubmitting(true);
 
     try {
@@ -112,7 +117,7 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
         }
       );
 
-      nextParams.append("dest", destination);
+      nextParams.append("dest", selectedDestination);
       const query = nextParams.toString();
       send({ type: "action", action: "hear" });
       router.push(query ? `${targetPath}?${query}` : targetPath);
@@ -134,41 +139,113 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-[85vh]">
-      <Card className="w-full max-w-xl p-8 text-center">
-        <h2 className="text-2xl font-semibold mb-6">Detected Destinations</h2>
+    <div className="flex flex-col items-center justify-center min-h-[85vh] animate-fade-in">
+      <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
+        {/* Header Section */}
+        <div className="mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-hospital-teal/10 mb-4">
+            <MapPin
+              className="w-8 h-8 text-hospital-teal"
+              aria-hidden="true"
+              focusable="false"
+            />
+          </div>
+          <h1 className="text-4xl font-bold text-hospital-blue-gray mb-3">
+            Confirm Your Destination
+          </h1>
+          <p className="text-lg text-hospital-blue-gray/70">
+            Please select your destination below
+          </p>
+        </div>
 
         {destinations.length === 0 ? (
-          <p>No destinations detected.</p>
+          <div className="py-12">
+            <p className="text-xl text-hospital-blue-gray/60">
+              No destinations detected. Please try again.
+            </p>
+          </div>
         ) : (
-          <ul className="mb-8 space-y-2">
-            {destinations.map((location) => {
-              const isSelected = location === selectedDestination;
-              return (
-                <li key={location}>
+          <>
+            {/* Destination Selection */}
+            <div className="mb-8 space-y-4">
+              {destinations.map((location) => {
+                const isSelected = location === selectedDestination;
+                return (
                   <button
+                    key={location}
                     type="button"
-                    onClick={() => handleDestinationSelect(location)}
+                    onClick={() => handleDestinationClick(location)}
                     disabled={submitting}
-                    className={`w-full rounded-md border px-4 py-3 text-lg transition ${
-                      isSelected
-                        ? "border-hospital-teal bg-hospital-teal/10 text-hospital-teal"
-                        : "border-gray-300 hover:border-hospital-teal hover:bg-hospital-teal/5"
-                    }`}
+                    className={`
+                      relative w-full rounded-xl border-[3px] px-8 py-6 text-xl font-semibold
+                      transition-all duration-200 transform
+                      ${
+                        isSelected
+                          ? "border-hospital-teal bg-hospital-teal text-white shadow-lg scale-[1.02]"
+                          : "border-hospital-blue/30 bg-white text-hospital-blue-gray hover:border-hospital-teal hover:bg-hospital-teal/5 hover:scale-[1.01]"
+                      }
+                      ${submitting ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
+                      disabled:opacity-50
+                    `}
                   >
-                    {location}
+                    <div className="flex items-center justify-between">
+                      <span className="flex-1 text-left">{location}</span>
+                      {isSelected && (
+                        <div className="flex-shrink-0 ml-4">
+                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center">
+                            <Check
+                              className="w-5 h-5 text-hospital-teal"
+                              strokeWidth={3}
+                              aria-hidden="true"
+                              focusable="false"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                );
+              })}
+            </div>
 
-        <div className="flex justify-center">
-          <Button variant="ghost" onClick={handleRestart} disabled={submitting}>
-            Restart
-          </Button>
-        </div>
+            {/* Helper Text */}
+            {selectedDestination && !submitting && (
+              <div className="mb-6 p-4 rounded-lg bg-hospital-teal/10 border border-hospital-teal/30">
+                <p className="text-hospital-teal font-medium">
+                  ✓ {selectedDestination} selected. Tap &quot;Continue&quot; to
+                  proceed.
+                </p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-4 justify-center mt-8">
+              <Button
+                variant="ghost"
+                onClick={handleRestart}
+                disabled={submitting}
+                className="text-lg px-8 py-6 h-auto text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
+              >
+                Start Over
+              </Button>
+              <Button
+                onClick={handleConfirm}
+                disabled={!selectedDestination || submitting}
+                className={`
+                  text-lg px-12 py-6 h-auto font-semibold
+                  ${
+                    selectedDestination && !submitting
+                      ? "bg-hospital-teal hover:bg-hospital-teal/90 text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+                      : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  }
+                  transition-all duration-200
+                `}
+              >
+                {submitting ? "Processing..." : "Continue →"}
+              </Button>
+            </div>
+          </>
+        )}
       </Card>
     </div>
   );

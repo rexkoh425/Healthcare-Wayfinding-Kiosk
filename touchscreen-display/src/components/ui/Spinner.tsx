@@ -1,8 +1,14 @@
 // components/ui/Spinner.tsx
-export default function Spinner({ size = 24 }) {
+export default function Spinner({
+  size = 24,
+  className = "",
+}: {
+  size?: number;
+  className?: string;
+}) {
   return (
     <svg
-      className="animate-spin"
+      className={`animate-spin ${className}`}
       style={{ width: size, height: size }}
       viewBox="0 0 24 24"
       fill="none"
@@ -23,4 +29,3 @@ export default function Spinner({ size = 24 }) {
     </svg>
   );
 }
-
