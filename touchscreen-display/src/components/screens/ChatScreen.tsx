@@ -276,6 +276,8 @@ const ChatScreen: React.FC = () => {
             className={`inline-flex items-center gap-3 px-6 py-3 rounded-full ${currentConfig.bgColor} shadow-lg transition-all duration-300`}
           >
             <Icon
+              aria-hidden="true"
+              focusable="false"
               className={`w-6 h-6 ${currentConfig.iconColor} ${currentConfig.pulseClass}`}
             />
             <span className="text-white font-semibold text-lg">
@@ -291,17 +293,36 @@ const ChatScreen: React.FC = () => {
         <div className="flex flex-col items-center gap-6">
           <button
             type="button"
-            onMouseDown={startRecording}
-            onMouseUp={stopRecording}
-            onMouseLeave={stopRecording}
-            onTouchStart={(event) => {
-              event.preventDefault();
+            onMouseDown={(e) => {
+              e.preventDefault();
               startRecording();
             }}
-            onTouchEnd={(event) => {
-              event.preventDefault();
+            onMouseUp={(e) => {
+              e.preventDefault();
               stopRecording();
             }}
+            onMouseLeave={(e) => {
+              if (status === "recording") stopRecording();
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              startRecording();
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              stopRecording();
+            }}
+            onTouchCancel={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              stopRecording();
+            }}
+            // prevent the browser’s “right-click” or “long-press” context menu
+            onContextMenu={(e) => e.preventDefault()}
+            // prevent long-press gesture detection on touch devices
+            style={{ WebkitTouchCallout: "none", userSelect: "none" }}
             disabled={isBusy}
             className={`relative group transition-all duration-300 ${
               isBusy
@@ -321,6 +342,8 @@ const ChatScreen: React.FC = () => {
               className={`relative w-48 h-48 rounded-full ${currentConfig.bgColor} shadow-2xl flex items-center justify-center border-4 ${currentConfig.borderColor} transition-all duration-300`}
             >
               <Icon
+                aria-hidden="true"
+                focusable="false"
                 className={`w-24 h-24 ${currentConfig.iconColor} ${currentConfig.pulseClass}`}
               />
             </div>
