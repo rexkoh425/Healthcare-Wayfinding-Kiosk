@@ -78,7 +78,7 @@ PICAM_COLOR_SPACE   = os.environ.get("PICAM_COLOR_SPACE", "RGB").strip().upper()
 # Overlay settings
 STREAM_DEBUG_OVERLAY = os.environ.get("STREAM_DEBUG_OVERLAY", "1") == "1"
 
-# Aspect-ratio classification settings (NEW)
+# Aspect-ratio classification settings
 USE_ASPECT_RATIO_CLASS = os.environ.get("USE_ASPECT_RATIO_CLASS", "0") == "1"
 ASPECT_RATIO_DIR  = Path(os.environ.get("ASPECT_RATIO_DIR", "aspect_ratio"))
 ASPECT_RATIO_FILE = ASPECT_RATIO_DIR / os.environ.get("ASPECT_RATIO_FILE", "aspect_ratio.json")
@@ -147,7 +147,7 @@ def fuzzy_match_location(text: Optional[str], threshold: float = FUZZY_MATCH_THR
     return best_name, best_score
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Aspect-ratio class mapping (NEW)
+# Aspect-ratio class mapping
 # ──────────────────────────────────────────────────────────────────────────────
 _aspect_ratio_bounds: Optional[Dict[str, Tuple[float, float]]] = None
 
@@ -158,7 +158,6 @@ def _load_aspect_ratio_bounds(path: Path) -> Dict[str, Tuple[float, float]]:
         lo = float(v["lower"])
         hi = float(v["upper"])
         bounds[str(k)] = (lo, hi)
-    # Optional: sanity check for overlap (non-fatal log)
     items = [(k, *bounds[k]) for k in bounds]
     for i in range(len(items)):
         ki, li, ui = items[i]
@@ -181,11 +180,9 @@ def classify_by_aspect_ratio(height_px: int, width_px: int) -> str:
         raise ValueError("Width must be > 0 for aspect ratio classification")
     ratio = float(height_px) / float(width_px)
     bounds = _get_aspect_ratio_bounds()
-    # Prefer left-closed, right-open intervals [lo, hi)
     for cls_key, (lo, hi) in bounds.items():
         if ratio >= lo and ratio < hi:
             return str(cls_key)
-    # If still not found, allow equality on upper edge (in case of final bin)
     for cls_key, (lo, hi) in bounds.items():
         if abs(ratio - hi) < 1e-9:
             return str(cls_key)
@@ -278,6 +275,43 @@ def _draw_obb_poly(img, pts4x2, label_text, color=GREEN, thickness=2):
     cv2.polylines(img, [pts], isClosed=True, color=color, thickness=thickness)
     tl_idx = np.lexsort((pts[:,0], pts[:,1]))[0]
     _put_label(img, pts[tl_idx], label_text, color)
+
+def _draw_template_boxes_on_frame(frame_bgr: np.ndarray, best_det) -> None:
+    """
+    Draw template field rectangles (projected back to frame) for the current best detection.
+    Controlled by STREAM_DEBUG_OVERLAY (call guarded by caller).
+    """
+    try:
+        rect_img, Minv, (rect_w, rect_h) = _rectified_from_detection(frame_bgr, best_det)
+
+        # Decide class key
+        if USE_ASPECT_RATIO_CLASS:
+            cls_key = classify_by_aspect_ratio(rect_h, rect_w)
+        else:
+            det_cls = best_det[2] if isinstance(best_det[0], np.ndarray) else best_det[5]
+            cls_key = str(det_cls)
+            if cls_key in {"slip1", "slip2", "slip3"}:
+                cls_key = cls_key[-1]
+
+        # Load template specs
+        tpl_path = select_template_path_from_class(cls_key)
+        rect_specs = load_template_rects(tpl_path, rect_w, rect_h)
+
+        # Project each rect's 4 corners using Minv and draw on the live frame
+        for spec in rect_specs:
+            x, y, w, h = spec["x"], spec["y"], spec["w"], spec["h"]
+            pts_rect = np.array(
+                [[x, y], [x + w, y], [x + w, y + h], [x, y + h]],
+                dtype=np.float32
+            ).reshape(-1, 1, 2)
+            pts_global = cv2.perspectiveTransform(pts_rect, Minv).reshape(-1, 2)
+            pts_int = pts_global.astype(int)
+            cv2.polylines(frame_bgr, [pts_int], isClosed=True, color=CYA, thickness=1)
+            # label near top-left of the quad
+            tl_idx = np.lexsort((pts_int[:,0], pts_int[:,1]))[0]
+            _put_label(frame_bgr, pts_int[tl_idx], spec["name"], color=CYA)
+    except Exception as e:
+        log.debug(f"Template overlay draw skipped: {e}")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # IoU + bbox helpers (stability)
@@ -395,16 +429,14 @@ def format_blur_txt(val: float) -> str:
     return f"{val:.0f}" if BLUR_METHOD == "tenengrad" else f"{val:.1f}"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Exposure helpers (NEW)
+# Exposure helpers
 # ──────────────────────────────────────────────────────────────────────────────
 def _exposure_metrics_gray(gray: np.ndarray) -> Tuple[float, float]:
-    """Return (p95, white_frac) where white_frac is fraction of pixels >= 245."""
     p95 = float(np.percentile(gray, 95))
     white_frac = float((gray >= 245).mean())
     return p95, white_frac
 
 def _roi_gray_from_det(frame_bgr: np.ndarray, det) -> Optional[np.ndarray]:
-    """Fast axis-aligned gray ROI from a detection (OBB or AABB)."""
     H, W = frame_bgr.shape[:2]
     if isinstance(det[0], np.ndarray):  # OBB polygon
         poly = det[0]
@@ -566,10 +598,8 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
             bigrois = _load_big_roi(bigroi_path)                   # normalized big-ROI per field
             ocr_list = _ocr_fields_y_sweep(rect_img, rect_specs, rect_w, rect_h, bigrois)
         else:
-            # No sweep (template-only) as fallback
             ocr_list = _ocr_fields_template_only(rect_img, rect_specs, rect_w, rect_h, pad=TEMPLATE_CROP_PAD)
 
-        # ---- Pack results per template field name, keep your existing shape ----
         results_by_name = {item["field"]: item for item in ocr_list}
 
         fields = {}
@@ -594,7 +624,6 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
             elif clean_text:
                 clinics_in_order.append(clean_text)
 
-        # ---- Assemble final result (unchanged contract) ----
         ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
         result = {
             "capture_id": ts,
@@ -609,7 +638,6 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
             "fields": fields,
         }
 
-        # Attach blur metric (as before)
         global _show_blur_ema
         try:
             blur_val_now = measure_blur(frame_bgr)
@@ -617,13 +645,11 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         except Exception:
             pass
 
-        # Optionally record that Y-sweep was used (handy for debugging)
         result.setdefault("sweep", {})["enabled"] = bool(OCR_SWEEP_ENABLED and OCR_SWEEP_AXIS == "y")
         if result["sweep"]["enabled"]:
             result["sweep"]["axis"] = "y"
             result["sweep"]["step_norm"] = SPIRAL_STEP_NORM
 
-        # Keep your latest_result cache behavior
         global _latest_result, _latest_result_ts
         _latest_result = {"locations": result.get("locations", []), "yolo": result["yolo"], "capture_id": result["capture_id"]}
         _latest_result_ts = time.time()
@@ -690,6 +716,8 @@ def _render_stream_frame():
         if STREAM_DEBUG_OVERLAY:
             for (poly, c, cls) in _last_boxes:
                 _draw_obb_poly(frame, poly, f"{cls} {c:.2f}")
+            # NEW: draw template boxes for the current best detection
+            _draw_template_boxes_on_frame(frame, best_det)
 
     # Blur measurement + EMA (used for gating regardless of overlay)
     blur_val = measure_blur(frame)
@@ -706,7 +734,7 @@ def _render_stream_frame():
         blur_ok = blur_val >= BLUR_MIN_LAP
         blur_thresh_txt = f">={BLUR_MIN_LAP:.0f}"
 
-    # Exposure gating (NEW): compute on the detection ROI from plain frame
+    # Exposure gating: compute on the detection ROI from plain frame
     expo_ok = True
     expo_p95 = None
     expo_white = None
@@ -731,7 +759,6 @@ def _render_stream_frame():
 
         _det_miss_frames = 0
     else:
-        # Reset the timer immediately when detections disappear (per requirement)
         _det_miss_frames += 1
         if _det_miss_frames >= DET_MISS_RESET_FRAMES:
             _ocr_pending_since = None
@@ -746,7 +773,6 @@ def _render_stream_frame():
         cv2.putText(frame, f"BLUR{'' if blur_ok else ' LOW'} (thr {blur_thresh_txt})",
                     (10, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.6, blur_color, 2)
 
-        # Exposure HUD line
         expo_color = (0, 200, 0) if expo_ok else (0, 0, 255)
         cv2.putText(frame, f"EXPO{' OK' if expo_ok else ' HIGH'}",
                     (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, expo_color, 2)
@@ -772,7 +798,6 @@ def _render_stream_frame():
         try:
             result = _run_ocr_on_detection(frame.copy(), best_det, best_det[2])
             if result:
-                # attach exposure metrics to the result (to mirror the offline pipeline)
                 if expo_p95 is not None and expo_white is not None:
                     result.setdefault("metrics", {})["exposure"] = {
                         "p95": float(expo_p95),
@@ -786,7 +811,6 @@ def _render_stream_frame():
                     cv2.putText(frame, "OCR OK", (10, 114),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-                # RESET timer + stability after firing
                 _ocr_pending_since = None
                 _stable_frames = 0
                 _last_best_bbox = None
@@ -796,7 +820,6 @@ def _render_stream_frame():
                 cv2.putText(frame, "OCR ERR", (10, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED, 2)
             log.error(f"OCR error: {e}")
     else:
-        # Show gating reason while waiting (overlay only)
         if STREAM_DEBUG_OVERLAY and _ocr_pending_since is not None:
             reasons = []
             if not ready_by_timer: reasons.append("TIMER")
@@ -829,9 +852,7 @@ def _render_stream_frame():
         b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
     )
 
-# OCR picture route
-
-# ── Minimal spiral OCR helpers (no debug) ─────────────────────────────────────
+# ── Minimal spiral OCR helpers (no debug)
 import math
 
 def _order_quad_tl_tr_br_bl(pts4x2: np.ndarray) -> np.ndarray:
@@ -872,11 +893,17 @@ def _load_big_roi(path: Path):
     for it in js:
         nm = it["name"]
         if all(k in it for k in ("x1","y1","x2","y2")):
-            x1,y1,x2,y2 = float(it["x1"]), float(it["y1"]), float(it["x2"]), float(it["y2"])
-        else:
+            x1,y1,x2,y2 = float(it["x1"]), float(it["y1"]), float(it["x2"]), float(it["y"] if "y" in it else "y2")
+            # Defensive: fix a possible key typo above; fallback handled below.
+        out[nm] = {"x1":float(it.get("x1", it.get("x", 0.0))), "y1":float(it.get("y1", it.get("y", 0.0))),
+                   "x2":float(it.get("x2", it.get("x", 1.0))), "y2":float(it.get("y2", it.get("y", 1.0)))}
+    # Backward compatible: also accept (cx,cy,w,h)
+    for it in js:
+        nm = it["name"]
+        if not all(k in it for k in ("x1","y1","x2","y2")) and all(k in it for k in ("x","y","w","h")):
             cx,cy,w,h = float(it["x"]), float(it["y"]), float(it["w"]), float(it["h"])
             x1,y1,x2,y2 = cx-w/2, cy-h/2, cx+w/2, cy+h/2
-        out[nm] = {"x1":max(0,x1), "y1":max(0,y1), "x2":min(1,x2), "y2":min(1,y2)}
+            out[nm] = {"x1":max(0,x1), "y1":max(0,y1), "x2":min(1,x2), "y2":min(1,y2)}
     return out
 
 def _start_center_no_shrink(tpl, roi, eps=1e-6):
@@ -911,7 +938,6 @@ def _ocr_text_and_conf(img_bgr, upscale=2.0):
     return sanitize_ocr_text(txt), avg
 
 def select_bigroi_path_from_class(cls_name: str) -> Path:
-    """registration_{variant}.json in OCR_ROI_DIR for the detected class."""
     variant = CLASS_TO_VARIANT.get(str(cls_name))
     if not variant:
         raise FileNotFoundError(f"No Big-ROI mapping for class '{cls_name}'")
@@ -922,10 +948,6 @@ def select_bigroi_path_from_class(cls_name: str) -> Path:
 
 # ---------- Y-only sweep building blocks ----------
 def _start_center_no_shrink_y(tpl_norm: dict, roi_norm: dict, eps: float = 1e-6):
-    """
-    Keep template w,h fixed; clamp center inside ROI so the box fits.
-    Returns adjusted tpl + (x_min,x_max,y_min,y_max) valid center bounds.
-    """
     cx, cy, w, h = float(tpl_norm["x"]), float(tpl_norm["y"]), float(tpl_norm["w"]), float(tpl_norm["h"])
     rx1, ry1, rx2, ry2 = float(roi_norm["x1"]), float(roi_norm["y1"]), float(roi_norm["x2"]), float(roi_norm["y2"])
     rw, rh = (rx2 - rx1), (ry2 - ry1)
@@ -938,7 +960,6 @@ def _start_center_no_shrink_y(tpl_norm: dict, roi_norm: dict, eps: float = 1e-6)
     return {"x": cx, "y": cy, "w": w, "h": h}, (x_min, x_max, y_min, y_max)
 
 def _y_only_sweep_order(cy0: float, y_min: float, y_max: float, step_norm: float):
-    """Return cy candidates sorted by |cy - cy0| (closest first)."""
     import numpy as _np
     def rdown(v):  return np.floor(v/step_norm)*step_norm
     def rup(v):    return np.ceil(v/step_norm)*step_norm
@@ -949,7 +970,6 @@ def _y_only_sweep_order(cy0: float, y_min: float, y_max: float, step_norm: float
     return ys[order].tolist()
 
 def _ocr_fields_template_only(rect_img: np.ndarray, rect_specs: list, rect_w: int, rect_h: int, pad: int = 4):
-    """No sweep: OCR exactly at the template rects."""
     out = []
     for spec in rect_specs:
         name, x, y, w, h = spec["name"], spec["x"], spec["y"], spec["w"], spec["h"]
@@ -967,14 +987,10 @@ def _ocr_fields_template_only(rect_img: np.ndarray, rect_specs: list, rect_w: in
     return out
 
 def _ocr_fields_y_sweep(rect_img: np.ndarray, rect_specs: list, rect_w: int, rect_h: int, bigrois_norm: dict):
-    """
-    Y-only sweep inside each field's ROI (if available). For fields without ROI, fall back to template-only.
-    """
     out = []
     for spec in rect_specs:
         name, x, y, w, h = spec["name"], spec["x"], spec["y"], spec["w"], spec["h"]
         roi = bigrois_norm.get(name)
-        # Template box in normalized coords:
         tpl_norm = {
             "x": (x + w/2.0) / rect_w,
             "y": (y + h/2.0) / rect_h,
@@ -983,7 +999,6 @@ def _ocr_fields_y_sweep(rect_img: np.ndarray, rect_specs: list, rect_w: int, rec
         }
 
         if roi is None:
-            # No ROI: template-only
             xx1 = max(0, x); yy1 = max(0, y)
             xx2 = min(rect_w, x + w); yy2 = min(rect_h, y + h)
             if xx2 <= xx1 or yy2 <= yy1:
@@ -997,11 +1012,9 @@ def _ocr_fields_y_sweep(rect_img: np.ndarray, rect_specs: list, rect_w: int, rec
             })
             continue
 
-        # Adjust center to fit ROI; keep width/height fixed
         try:
             tpl_adj, (x_min, x_max, y_min, y_max) = _start_center_no_shrink_y(tpl_norm, roi)
         except Exception:
-            # If it cannot fit, fallback to template-only
             xx1 = max(0, x); yy1 = max(0, y)
             xx2 = min(rect_w, x + w); yy2 = min(rect_h, y + h)
             if xx2 <= xx1 or yy2 <= yy1:
@@ -1015,7 +1028,6 @@ def _ocr_fields_y_sweep(rect_img: np.ndarray, rect_specs: list, rect_w: int, rec
             })
             continue
 
-        # Build Y candidates
         cx_fixed = tpl_adj["x"]
         ys = _y_only_sweep_order(tpl_adj["y"], y_min, y_max, SPIRAL_STEP_NORM)
         w_px = int(round(tpl_adj["w"] * rect_w))
@@ -1023,7 +1035,7 @@ def _ocr_fields_y_sweep(rect_img: np.ndarray, rect_specs: list, rect_w: int, rec
         x_px = int(round(cx_fixed * rect_w - w_px/2.0))
         x_px = max(0, min(x_px, rect_w - 1))
 
-        best = None  # (fuzzy, conf, payload)
+        best = None
         for cy in ys:
             y_px = int(round(cy * rect_h - h_px/2.0))
             y_px = max(0, min(y_px, rect_h - 1))
@@ -1049,7 +1061,6 @@ def _ocr_fields_y_sweep(rect_img: np.ndarray, rect_specs: list, rect_w: int, rec
         if best is not None:
             out.append(best[2])
         else:
-            # fallback if nothing valid
             xx1 = max(0, x); yy1 = max(0, y)
             xx2 = min(rect_w, x + w); yy2 = min(rect_h, y + h)
             if xx2 <= xx1 or yy2 <= yy1:
@@ -1078,7 +1089,6 @@ async def stream(request: Request):
                 if await request.is_disconnected():
                     log.info("client disconnected; stopping MJPEG stream")
                     break
-                # Short-lived lock is inside _capture_frame_array()
                 chunk = await asyncio.to_thread(_render_stream_frame)
                 yield chunk
         except asyncio.CancelledError:
@@ -1093,7 +1103,7 @@ async def stream(request: Request):
 
 @router.post("/ocr")
 async def run_ocr(image_path: Optional[str] = None):
-    # 1) get image (file or camera) — capture holds the short-lived lock
+    # 1) get image (file or camera)
     if image_path:
         img_bgr = cv2.imread(image_path)
         if img_bgr is None:
@@ -1104,7 +1114,6 @@ async def run_ocr(image_path: Optional[str] = None):
         frame = _capture_frame_array("main")
         img_bgr = normalize_frame_color(frame)
         if ROTATE_STREAM_90 and ROTATE_STREAM_180:
-            # prefer 90 CCW if both set
             img_bgr = cv2.rotate(img_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
         elif ROTATE_STREAM_90:
             img_bgr = cv2.rotate(img_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
@@ -1145,7 +1154,7 @@ async def run_ocr(image_path: Optional[str] = None):
     # 3) rectify best detection
     rect_img, Minv, (rect_w, rect_h) = _rectified_from_detection(img_bgr, best_det)
 
-    # 4) choose class: by aspect ratio if enabled, else use detector class (normalized to "1","2","3")
+    # 4) choose class: by aspect ratio if enabled, else use detector class
     if USE_ASPECT_RATIO_CLASS:
         try:
             cls_key = classify_by_aspect_ratio(rect_h, rect_w)
@@ -1199,7 +1208,7 @@ async def run_ocr(image_path: Optional[str] = None):
     if not best_by_name:
         raise HTTPException(status_code=422, detail="OCR produced no text")
 
-    # 7) assemble response + update latest_result cache (kept minimal)
+    # 7) assemble response + update latest_result cache
     ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     ordered = [best_by_name[k] for k in sorted(best_by_name.keys())]
     locations = [b["match"] or b["ocr_text"] for b in ordered]
