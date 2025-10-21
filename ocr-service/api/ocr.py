@@ -15,6 +15,7 @@ import logging
 from picamera2 import Picamera2
 from libcamera import controls
 from ultralytics import YOLO
+from service import log
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Config
@@ -45,13 +46,13 @@ ROTATE_STREAM_180 = os.environ.get("ROTATE_STREAM_180", "0") == "1"
 
 # OCR gating (NO cooldown; we use an armed delay)
 OCR_MIN_CONF          = float(os.environ.get("OCR_MIN_CONF", "0.90"))
-OCR_ARM_DELAY_SEC     = float(os.environ.get("OCR_ARM_DELAY_SEC", "1.0"))  # wait this long after first detection
+OCR_ARM_DELAY_SEC     = float(os.environ.get("OCR_ARM_DELAY_SEC", "4.0"))  # wait this long after first detection
 STABILITY_MIN_FRAMES  = int(os.environ.get("STABILITY_MIN_FRAMES", "2"))   # 0 to disable stability gate
 STABILITY_IOU_THRESH  = float(os.environ.get("STABILITY_IOU_THRESH", "0.5"))
 DET_MISS_RESET_FRAMES = int(os.environ.get("DET_MISS_RESET_FRAMES", "1"))  # reset timer as soon as detections disappear
 
 # Spiral/Y-sweep toggles
-OCR_SWEEP_ENABLED = os.environ.get("OCR_SWEEP_ENABLED", "1") == "1"  # turn sweep on/off
+OCR_SWEEP_ENABLED = os.environ.get("OCR_SWEEP_ENABLED", "1") == "0"  # turn sweep on/off
 OCR_SWEEP_AXIS    = os.environ.get("OCR_SWEEP_AXIS", "y").strip().lower()  # "y" (vertical only) or "xy" (full 2D grid)
 EARLY_STOP_FUZZY  = float(os.environ.get("EARLY_STOP_FUZZY", "0.98"))      # stop sweep early if fuzzy ≥ this
 
@@ -102,7 +103,7 @@ EXPO_MAX_WHITE_FRAC = float(os.environ.get("EXPO_MAX_WHITE_FRAC", "0.15"))  # fr
 _latest_result     = None
 _latest_result_ts  = 0.0
 
-log = logging.getLogger(__name__)
+#log = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Location matching (simplified)
@@ -658,7 +659,7 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
         return result
 
     except Exception as e:
-        log.error(f"OCR processing error: {e}")
+        log.exception(f"OCR processing error: {e}")
         return None
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -887,23 +888,57 @@ def _load_template_boxes(path: Path):
     js = json.loads(path.read_text(encoding="utf-8"))
     return {it["name"]: {"x":float(it["x"]), "y":float(it["y"]), "w":float(it["w"]), "h":float(it["h"])} for it in js}
 
-def _load_big_roi(path: Path):
-    js = json.loads(path.read_text(encoding="utf-8"))
-    out = {}
-    for it in js:
-        nm = it["name"]
-        if all(k in it for k in ("x1","y1","x2","y2")):
-            x1,y1,x2,y2 = float(it["x1"]), float(it["y1"]), float(it["x2"]), float(it["y"] if "y" in it else "y2")
-            # Defensive: fix a possible key typo above; fallback handled below.
-        out[nm] = {"x1":float(it.get("x1", it.get("x", 0.0))), "y1":float(it.get("y1", it.get("y", 0.0))),
-                   "x2":float(it.get("x2", it.get("x", 1.0))), "y2":float(it.get("y2", it.get("y", 1.0)))}
-    # Backward compatible: also accept (cx,cy,w,h)
-    for it in js:
-        nm = it["name"]
-        if not all(k in it for k in ("x1","y1","x2","y2")) and all(k in it for k in ("x","y","w","h")):
-            cx,cy,w,h = float(it["x"]), float(it["y"]), float(it["w"]), float(it["h"])
-            x1,y1,x2,y2 = cx-w/2, cy-h/2, cx+w/2, cy+h/2
-            out[nm] = {"x1":max(0,x1), "y1":max(0,y1), "x2":min(1,x2), "y2":min(1,y2)}
+def _to_float(field_name: str, value, file_path: Path, entry_name: str) -> float:
+    try:
+        return float(value)
+    except Exception:
+        raise ValueError(
+            f"ROI parse error in {file_path}: entry '{entry_name}' has non-numeric "
+            f"'{field_name}'={value!r}"
+        )
+
+def _load_big_roi(path: Path) -> Dict[str, Dict[str, float]]:
+    # Read JSON
+    try:
+        js = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise ValueError(f"Failed to read ROI JSON: {path}: {e}") from e
+
+    out: Dict[str, Dict[str, float]] = {}
+
+    def clamp01(v: float) -> float:
+        return max(0.0, min(1.0, v))
+
+    for i, it in enumerate(js):
+        if "name" not in it:
+            raise ValueError(f"{path}: ROI item #{i} missing 'name'")
+        nm = str(it["name"])
+
+        # Accept either corner box or center/size
+        if all(k in it for k in ("x1", "y1", "x2", "y2")):
+            x1 = _to_float("x1", it["x1"], path, nm)
+            y1 = _to_float("y1", it["y1"], path, nm)
+            x2 = _to_float("x2", it["x2"], path, nm)
+            y2 = _to_float("y2", it["y2"], path, nm)
+        elif all(k in it for k in ("x", "y", "w", "h")):
+            cx = _to_float("x", it["x"], path, nm)
+            cy = _to_float("y", it["y"], path, nm)
+            w  = _to_float("w", it["w"], path, nm)
+            h  = _to_float("h", it["h"], path, nm)
+            x1, y1, x2, y2 = cx - w/2.0, cy - h/2.0, cx + w/2.0, cy + h/2.0
+        else:
+            raise ValueError(
+                f"{path}: ROI '{nm}' must have either (x1,y1,x2,y2) or (x,y,w,h)"
+            )
+
+        # Clamp and validate
+        x1 = clamp01(float(x1)); y1 = clamp01(float(y1))
+        x2 = clamp01(float(x2)); y2 = clamp01(float(y2))
+        if not (x2 > x1 and y2 > y1):
+            raise ValueError(f"{path}: ROI '{nm}' has invalid box after clamping: {(x1,y1,x2,y2)}")
+
+        out[nm] = {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+
     return out
 
 def _start_center_no_shrink(tpl, roi, eps=1e-6):
@@ -979,6 +1014,12 @@ def _ocr_fields_template_only(rect_img: np.ndarray, rect_specs: list, rect_w: in
             continue
         crop = rect_img[yy1:yy2, xx1:xx2]
         text, conf = _ocr_text_and_conf(crop, upscale=UPSCALE_FOR_OCR)
+
+        log.info(
+            "OCR(template) field=%s box=[%d,%d,%d,%d] avg_conf=%.2f text=%r",
+            name, xx1, yy1, xx2 - xx1, yy2 - yy1, float(conf), text
+        )
+
         match, score = fuzzy_match_location(text)
         out.append({
             "field": name, "raw": text, "text": text, "ocr_conf": round(float(conf),2),
