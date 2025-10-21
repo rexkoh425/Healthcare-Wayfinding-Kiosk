@@ -55,7 +55,6 @@ OCR_SWEEP_ENABLED = os.environ.get("OCR_SWEEP_ENABLED", "1") == "1"  # turn swee
 OCR_SWEEP_AXIS    = os.environ.get("OCR_SWEEP_AXIS", "y").strip().lower()  # "y" (vertical only) or "xy" (full 2D grid)
 EARLY_STOP_FUZZY  = float(os.environ.get("EARLY_STOP_FUZZY", "0.98"))      # stop sweep early if fuzzy ≥ this
 
-
 # Legacy vars kept for compatibility in logs if referenced
 OCR_COOLDOWN_SEC  = 0.0
 _last_ocr_time    = 0.0
@@ -149,7 +148,9 @@ yolo_model = YOLO(YOLO_WEIGHTS, task="obb")
 # ──────────────────────────────────────────────────────────────────────────────
 router = APIRouter()
 _camera_init_lock = Lock()
-_capture_lock     = Lock()
+
+# New: short-lived camera lock used ONLY during capture
+_picam_lock = Lock()
 
 picam: Optional[Picamera2] = None
 _picam_video_config = None
@@ -188,6 +189,17 @@ def _ensure_camera_started():
                 raise HTTPException(status_code=500, detail="Pi camera unavailable") from exc
 
         return picam
+
+def _capture_frame_array(stream_name: str = "main") -> np.ndarray:
+    """
+    Centralized capture that holds the picam lock ONLY during capture_array().
+    """
+    cam = _ensure_camera_started()
+    with _picam_lock:
+        frame = cam.capture_array(stream_name)
+    if frame is None or frame.size == 0:
+        raise RuntimeError("Failed to capture frame from Pi camera")
+    return frame
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Drawing helpers
@@ -545,7 +557,7 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
 
         # Optionally record that Y-sweep was used (handy for debugging)
         result.setdefault("sweep", {})["enabled"] = bool(OCR_SWEEP_ENABLED and OCR_SWEEP_AXIS == "y")
-        if result["sweep"]["enabled"]:
+        if result["sweep"]["enabled"]]:
             result["sweep"]["axis"] = "y"
             result["sweep"]["step_norm"] = SPIRAL_STEP_NORM
 
@@ -580,13 +592,9 @@ def _render_stream_frame():
     if not CAMERA_ENABLED:
         raise RuntimeError("Camera disabled")
 
-    cam_handle = _ensure_camera_started()
-
-    with _capture_lock:
-        frame = cam_handle.capture_array("main")
-        if frame is None or frame.size == 0:
-            raise RuntimeError("Failed to capture frame from Pi camera")
-        frame = normalize_frame_color(frame)
+    # Short-lived lock ONLY during capture
+    frame = _capture_frame_array("main")
+    frame = normalize_frame_color(frame)
 
     if ROTATE_STREAM_90 and ROTATE_STREAM_180:
         log.warning("Both ROTATE_STREAM_90 and ROTATE_STREAM_180 enabled; applying single 90-degree rotation.")
@@ -755,8 +763,6 @@ def _render_stream_frame():
         b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
     )
 
-
-
 # OCR picture route
 
 # ── Minimal spiral OCR helpers (no debug) ─────────────────────────────────────
@@ -818,8 +824,8 @@ def _start_center_no_shrink(tpl, roi, eps=1e-6):
     return {"x":cx,"y":cy,"w":w,"h":h}, (x_min,x_max,y_min,y_max)
 
 def _grid_in_spiral_order(cx, cy, x_min, x_max, y_min, y_max, step):
-    def rdown(v): return math.floor(v/step)*step
-    def rup(v):   return math.ceil(v/step)*step
+    def rdown(v): return np.floor(v/step)*step
+    def rup(v):   return np.ceil(v/step)*step
     xs = np.arange(rup(x_min), rdown(x_max)+step/2, step)
     ys = np.arange(rup(y_min), rdown(y_max)+step/2, step)
     grid = np.array([(x,y) for y in ys for x in xs], dtype=np.float32)
@@ -838,8 +844,6 @@ def _ocr_text_and_conf(img_bgr, upscale=2.0):
     txt = " ".join([w for w in d.get("text", []) if w and w.strip()])
     return sanitize_ocr_text(txt), avg
 
-
-
 def select_bigroi_path_from_class(cls_name: str) -> Path:
     """registration_{variant}.json in OCR_ROI_DIR for the detected class."""
     variant = CLASS_TO_VARIANT.get(str(cls_name))
@@ -850,9 +854,7 @@ def select_bigroi_path_from_class(cls_name: str) -> Path:
         raise FileNotFoundError(f"Big-ROI not found: {p}")
     return p
 
-
 # ---------- Y-only sweep building blocks ----------
-
 def _start_center_no_shrink_y(tpl_norm: dict, roi_norm: dict, eps: float = 1e-6):
     """
     Keep template w,h fixed; clamp center inside ROI so the box fits.
@@ -995,8 +997,6 @@ def _ocr_fields_y_sweep(rect_img: np.ndarray, rect_specs: list, rect_w: int, rec
             })
     return out
 
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # FastAPI Routes
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1012,6 +1012,7 @@ async def stream(request: Request):
                 if await request.is_disconnected():
                     log.info("client disconnected; stopping MJPEG stream")
                     break
+                # Short-lived lock is inside _capture_frame_array()
                 chunk = await asyncio.to_thread(_render_stream_frame)
                 yield chunk
         except asyncio.CancelledError:
@@ -1026,7 +1027,7 @@ async def stream(request: Request):
 
 @router.post("/ocr")
 async def run_ocr(image_path: Optional[str] = None):
-    # 1) get image (file or camera) — reuse camera & normalize & rotate
+    # 1) get image (file or camera) — capture holds the short-lived lock
     if image_path:
         img_bgr = cv2.imread(image_path)
         if img_bgr is None:
@@ -1034,11 +1035,7 @@ async def run_ocr(image_path: Optional[str] = None):
     else:
         if not CAMERA_ENABLED:
             raise HTTPException(status_code=503, detail="Camera disabled; provide image_path")
-        cam = _ensure_camera_started()
-        with _capture_lock:
-            frame = cam.capture_array("main")
-            if frame is None or frame.size == 0:
-                raise HTTPException(status_code=500, detail="Camera capture failed")
+        frame = _capture_frame_array("main")
         img_bgr = normalize_frame_color(frame)
         if ROTATE_STREAM_90 and ROTATE_STREAM_180:
             # prefer 90 CCW if both set
