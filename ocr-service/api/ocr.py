@@ -75,6 +75,9 @@ _FRAME_PERIOD       = 1.0 / max(1, TARGET_STREAM_FPS)
 STREAM_JPEG_QUALITY = int(os.environ.get("STREAM_JPEG_QUALITY", "85"))
 PICAM_COLOR_SPACE   = os.environ.get("PICAM_COLOR_SPACE", "RGB").strip().upper()
 
+# Overlay settings (NEW)
+STREAM_DEBUG_OVERLAY = os.environ.get("STREAM_DEBUG_OVERLAY", "1") == "1"
+
 TEMPLATE_CROP_PAD    = int(os.environ.get("TEMPLATE_CROP_PAD", "4"))
 TESSERACT_WIN_PATH   = os.environ.get("TESSERACT_WIN_PATH", "")
 
@@ -386,7 +389,7 @@ def load_template_rects(template_path: Path, rect_W: int, rect_H: int) -> List[D
     for i, spec in enumerate(tpl):
         for key in ("x", "y", "w", "h", "name"):
             if key not in spec:
-                raise ValueError(f"template item #{i} missing key '{key}'")
+                raise ValueError(f"template item #%i missing key '%s'" % (i, key))
         x = int(float(spec["x"]) * rect_W)
         y = int(float(spec["y"]) * rect_H)
         w = int(float(spec["w"]) * rect_W)
@@ -557,7 +560,7 @@ def _run_ocr_on_detection(frame_bgr, det, cls_name):
 
         # Optionally record that Y-sweep was used (handy for debugging)
         result.setdefault("sweep", {})["enabled"] = bool(OCR_SWEEP_ENABLED and OCR_SWEEP_AXIS == "y")
-        if result["sweep"]["enabled"]]:
+        if result["sweep"]["enabled"]:
             result["sweep"]["axis"] = "y"
             result["sweep"]["step_norm"] = SPIRAL_STEP_NORM
 
@@ -621,14 +624,15 @@ def _render_stream_frame():
     best_conf = 0.0
     best_det = None
 
-    # Draw OBBs and pick best
+    # Pick best det (drawing guarded by overlay flag)
     if _last_boxes:
         best_det = max(_last_boxes, key=lambda x: x[1])
         best_conf = best_det[1]
-        for (poly, c, cls) in _last_boxes:
-            _draw_obb_poly(frame, poly, f"{cls} {c:.2f}")
+        if STREAM_DEBUG_OVERLAY:
+            for (poly, c, cls) in _last_boxes:
+                _draw_obb_poly(frame, poly, f"{cls} {c:.2f}")
 
-    # Blur measurement + EMA
+    # Blur measurement + EMA (used for gating regardless of overlay)
     blur_val = measure_blur(frame)
     if _show_blur_ema is None:
         _show_blur_ema = blur_val
@@ -675,23 +679,24 @@ def _render_stream_frame():
             _last_best_bbox = None
             _stable_frames = 0
 
-    # HUD
-    hud_text = f"frm:{_frame_idx} det:{len(_last_boxes)} conf:{best_conf*100:.1f}%  blur:{format_blur_txt(_show_blur_ema)} {BLUR_METHOD[0].upper()}"
-    cv2.putText(frame, hud_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, WHT, 2)
-    blur_color = (0, 200, 0) if blur_ok else (0, 0, 255)
-    cv2.putText(frame, f"BLUR{'' if blur_ok else ' LOW'} (thr {blur_thresh_txt})",
-                (10, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.6, blur_color, 2)
+    # HUD (draw only if overlay enabled)
+    if STREAM_DEBUG_OVERLAY:
+        hud_text = f"frm:{_frame_idx} det:{len(_last_boxes)} conf:{best_conf*100:.1f}%  blur:{format_blur_txt(_show_blur_ema)} {BLUR_METHOD[0].upper()}"
+        cv2.putText(frame, hud_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, WHT, 2)
+        blur_color = (0, 200, 0) if blur_ok else (0, 0, 255)
+        cv2.putText(frame, f"BLUR{'' if blur_ok else ' LOW'} (thr {blur_thresh_txt})",
+                    (10, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.6, blur_color, 2)
 
-    # Exposure HUD line
-    expo_color = (0, 200, 0) if expo_ok else (0, 0, 255)
-    cv2.putText(frame, f"EXPO{' OK' if expo_ok else ' HIGH'}",
-                (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, expo_color, 2)
+        # Exposure HUD line
+        expo_color = (0, 200, 0) if expo_ok else (0, 0, 255)
+        cv2.putText(frame, f"EXPO{' OK' if expo_ok else ' HIGH'}",
+                    (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, expo_color, 2)
 
-    if _ocr_pending_since is not None:
-        time_waited = now - _ocr_pending_since
-        time_left = max(0.0, OCR_ARM_DELAY_SEC - time_waited)
-        cv2.putText(frame, f"OCR ARM: {time_left:.1f}s",
-                    (10, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.6, YEL, 2)
+        if _ocr_pending_since is not None:
+            time_waited = now - _ocr_pending_since
+            time_left = max(0.0, OCR_ARM_DELAY_SEC - time_waited)
+            cv2.putText(frame, f"OCR ARM: {time_left:.1f}s",
+                        (10, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.6, YEL, 2)
 
     # Conditions for OCR (do NOT affect timer)
     conditions_ok = (
@@ -718,8 +723,9 @@ def _render_stream_frame():
                     }
 
                 _last_ocr_time = now
-                cv2.putText(frame, "OCR OK", (10, 114),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                if STREAM_DEBUG_OVERLAY:
+                    cv2.putText(frame, "OCR OK", (10, 114),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
                 # RESET timer + stability after firing
                 _ocr_pending_since = None
@@ -727,11 +733,12 @@ def _render_stream_frame():
                 _last_best_bbox = None
                 _det_miss_frames = 0
         except Exception as e:
-            cv2.putText(frame, "OCR ERR", (10, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED, 2)
+            if STREAM_DEBUG_OVERLAY:
+                cv2.putText(frame, "OCR ERR", (10, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED, 2)
             log.error(f"OCR error: {e}")
     else:
-        # Show gating reason while waiting
-        if _ocr_pending_since is not None:
+        # Show gating reason while waiting (overlay only)
+        if STREAM_DEBUG_OVERLAY and _ocr_pending_since is not None:
             reasons = []
             if not ready_by_timer: reasons.append("TIMER")
             if best_det is None: reasons.append("NO DET")
