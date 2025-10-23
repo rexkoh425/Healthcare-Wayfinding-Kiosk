@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Search, FileText } from "lucide-react";
+import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useRouter } from "next/navigation";
@@ -9,6 +9,7 @@ import Spinner from "@/components/ui/Spinner";
 import useWebSocket from "@/lib/useWebSocket";
 
 const POLL_INTERVAL_MS = 500;
+const VIDEO_PATH = "/camera/scanreg.mp4";
 
 function resolveOcrBase(): string {
   const env = process.env.NEXT_PUBLIC_OCR_API_BASE;
@@ -51,11 +52,9 @@ const CameraScreen: React.FC = () => {
       return undefined;
     }
 
-    let active = true;
     let lastSeenTs: number | null = null;
-    let intervalId: number | null = null;
 
-    const pollLatest = async () => {
+    async function pollLatest() {
       try {
         const response = await fetch(`${apiBase}/latest_result`, {
           cache: "no-store",
@@ -83,37 +82,13 @@ const CameraScreen: React.FC = () => {
       } catch (error) {
         console.error("latest_result poll failed", error);
       }
-    };
+    }
 
-    const resetLatestResult = async () => {
-      try {
-        await fetch(`${apiBase}/latest_result/reset`, { method: "POST" });
-      } catch (error) {
-        console.warn("Failed to reset latest OCR result", error);
-      }
-    };
-
-    const startPolling = async () => {
-      await resetLatestResult();
-      if (!active) {
-        return;
-      }
-      await pollLatest();
-      if (!active) {
-        return;
-      }
-      intervalId = window.setInterval(pollLatest, POLL_INTERVAL_MS);
-    };
-
-    startPolling().catch((error) => {
-      console.error("Failed to start OCR polling", error);
-    });
+    pollLatest();
+    const id = window.setInterval(pollLatest, POLL_INTERVAL_MS);
 
     return () => {
-      active = false;
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
-      }
+      window.clearInterval(id);
     };
   }, [apiBase, router]);
 
@@ -158,73 +133,81 @@ const CameraScreen: React.FC = () => {
     }
     setStreamUrl("");
     send({ type: "action", action: "idle" });
-    if (apiBase) {
-      fetch(`${apiBase}/latest_result/reset`, { method: "POST" }).catch(
-        (error) => {
-          console.warn("Failed to reset latest OCR result on back", error);
-        }
-      );
-    }
     router.replace("/");
-    router.refresh();
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-center h-[85vh]">
-      <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
-        <div className="mb-8">
-          <div className="bg-hospital-teal/10 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
-            <FileText size={48} className="text-hospital-teal" />
+    <div className="relative flex flex-col items-center justify-center h-[80vh]">
+      <Card className="w-[90vw] max-w-none p-12 text-center kiosk-card flex flex-col items-center scale-110">
+        {/* Video + Camera Row */}
+        <div className="flex flex-col md:flex-row items-center justify-center gap-6 mb-6 w-full">
+          {/* Instructional Video */}
+          <div className="border rounded-lg shadow bg-white p-2 flex-shrink-0">
+            <video
+              src={VIDEO_PATH}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="w-40 md:w-48 lg:w-56 aspect-square object-cover rounded-md"
+              aria-label="Instructional video showing how to scan registration slip"
+            />
           </div>
-          <p className="text-hospital-blue-gray/70 text-xl max-w-xl mx-auto">
-            Position your registration slip within the frame
-          </p>
-        </div>
 
-        {streamUrl && !loading && (
-          <div className="mb-8 flex justify-center">
-            <div className="border rounded-lg overflow-hidden shadow flex justify-center items-center max-h-[75vh] w-full max-w-2xl bg-black">
+          {/* Camera Stream */}
+          <div className="border rounded-lg overflow-hidden shadow flex justify-center items-center bg-black relative aspect-video w-full max-w-4xl">
+            {streamUrl && !loading ? (
               <img
                 ref={streamImgRef}
                 src={streamUrl}
                 alt="Live camera stream"
-                className="max-h-[75vh] w-auto object-contain"
+                className="w-full h-full object-contain"
               />
-            </div>
-          </div>
-        )}
-
-        <div className="flex flex-col space-y-4">
-          <Button
-            onClick={handleScan}
-            size="lg"
-            disabled={loading}
-            className={`relative bg-hospital-teal text-white py-6 text-lg kiosk-button ${
-              loading
-                ? "cursor-not-allowed opacity-80"
-                : "hover:bg-hospital-teal/90"
-            }`}
-          >
-            {loading ? (
-              <Spinner size={28} />
             ) : (
-              <>
-                <Search className="mr-2 h-5 w-5" />
-                Scan Registration Slip
-              </>
+              !loading && (
+                <p className="text-white p-12 text-lg text-center">
+                  Camera feed unavailable or loading...
+                </p>
+              )
             )}
-          </Button>
+          </div>
         </div>
 
-        <div className="flex justify-between mt-6">
-          <Button
-            onClick={handleBack}
-            variant="ghost"
-            className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
-            disabled={loading}
-          >
-            Back
-          </Button>
+        <div className="flex flex-col space-y-4 w-full items-center">
+          <div className="w-full max-w-6xl mx-auto">
+            <Button
+              onClick={handleScan}
+              size="lg"
+              disabled={loading}
+              className={`w-full bg-hospital-teal text-white py-6 text-lg kiosk-button ${
+                loading
+                  ? "cursor-not-allowed opacity-80"
+                  : "hover:bg-hospital-teal/90"
+              }`}
+            >
+              {loading ? (
+                <Spinner size={28} />
+              ) : (
+                <>
+                  <Search className="mr-2 h-5 w-5" />
+                  Scan Registration Slip
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        <div className="w-full max-w-6xl mx-auto mt-4">
+          <div className="flex justify-start">
+            <Button
+              onClick={handleBack}
+              variant="ghost"
+              className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
+              disabled={loading}
+            >
+              Back
+            </Button>
+          </div>
         </div>
       </Card>
 
