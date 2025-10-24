@@ -19,7 +19,15 @@ from ultralytics import YOLO
 # ──────────────────────────────────────────────────────────────────────────────
 # Config
 # ──────────────────────────────────────────────────────────────────────────────
-YOLO_WEIGHTS = os.environ.get("YOLO_WEIGHTS", "model_weights/best.pt")
+YOLO_WEIGHTS_DEFAULT = os.environ.get("YOLO_WEIGHTS", "model_weights/best.pt")
+YOLO_STICKER_WEIGHTS = os.environ.get(
+    "YOLO_STICKER_WEIGHTS", YOLO_WEIGHTS_DEFAULT
+)
+DETECTOR_MODE_WEIGHTS = {
+    "default": YOLO_WEIGHTS_DEFAULT,
+    "sticker": YOLO_STICKER_WEIGHTS,
+}
+DEFAULT_DETECTOR_MODE = os.environ.get("YOLO_DEFAULT_MODE", "default").strip().lower() or "default"
 CLASS_TO_VARIANT = {"1": 1, "2": 2, "3": 3}
 
 TEMPLATE_DIR = Path(os.environ.get("TEMPLATE_DIR", "templates"))
@@ -64,6 +72,7 @@ TARGET_STREAM_FPS   = int(os.environ.get("TARGET_STREAM_FPS", "8"))
 _FRAME_PERIOD       = 1.0 / max(1, TARGET_STREAM_FPS)
 STREAM_JPEG_QUALITY = int(os.environ.get("STREAM_JPEG_QUALITY", "85"))
 PICAM_COLOR_SPACE   = os.environ.get("PICAM_COLOR_SPACE", "RGB").strip().upper()
+BBOX_MISS_TIMEOUT_SEC = float(os.environ.get("BBOX_MISS_TIMEOUT_SEC", "1.5"))
 
 TEMPLATE_CROP_PAD    = int(os.environ.get("TEMPLATE_CROP_PAD", "4"))
 TESSERACT_WIN_PATH   = os.environ.get("TESSERACT_WIN_PATH", "")
@@ -78,6 +87,8 @@ _show_blur_ema     = None  # runtime EMA state
 # Latest result cache
 _latest_result     = None
 _latest_result_ts  = 0.0
+_bbox_detected     = False
+_bbox_last_seen    = 0.0
 
 log = logging.getLogger(__name__)
 
@@ -126,7 +137,38 @@ def fuzzy_match_location(text: Optional[str], threshold: float = FUZZY_MATCH_THR
 # ──────────────────────────────────────────────────────────────────────────────
 # YOLO OBB Model
 # ──────────────────────────────────────────────────────────────────────────────
-yolo_model = YOLO(YOLO_WEIGHTS, task="obb")
+_yolo_model: Optional[YOLO] = None
+_yolo_lock = Lock()
+_current_detector_mode: Optional[str] = None
+
+def _resolve_detector_weights(mode: str) -> str:
+    key = (mode or "").strip().lower()
+    weights = DETECTOR_MODE_WEIGHTS.get(key)
+    if not weights:
+        raise ValueError(f"Unknown detector mode '{mode}'")
+    return weights
+
+def current_detector_mode() -> str:
+    return _current_detector_mode or DEFAULT_DETECTOR_MODE
+
+def _ensure_yolo_model(mode: Optional[str] = None) -> YOLO:
+    global _yolo_model, _current_detector_mode
+    target_mode = (mode or current_detector_mode()).strip().lower()
+    try:
+        weights = _resolve_detector_weights(target_mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    with _yolo_lock:
+        if _yolo_model is None or (_current_detector_mode or "").lower() != target_mode:
+            try:
+                log.info("Loading YOLO detector mode=%s weights=%s", target_mode, weights)
+                _yolo_model = YOLO(weights, task="obb")
+                _current_detector_mode = target_mode
+            except Exception as exc:
+                log.error("Failed to load YOLO weights '%s': %s", weights, exc)
+                raise HTTPException(status_code=500, detail="Detector load failed") from exc
+    return _yolo_model
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Camera setup
@@ -228,15 +270,15 @@ def _iou(a, b):
 # ──────────────────────────────────────────────────────────────────────────────
 # YOLO detection
 # ──────────────────────────────────────────────────────────────────────────────
-def _yolo_detect_obb(img_bgr, imgsz, conf):
-    if yolo_model is None:
-        return []
+def _yolo_detect_obb(model: YOLO, img_bgr, imgsz, conf):
     try:
-        res = yolo_model.predict(img_bgr, imgsz=imgsz, conf=conf, iou=STREAM_IOU, verbose=False)[0]
+        res = model.predict(img_bgr, imgsz=imgsz, conf=conf, iou=STREAM_IOU, verbose=False)[0]
         if res is None or not hasattr(res, 'obb') or res.obb is None:
             return []
         out = []
         obb = res.obb
+
+        names = getattr(model, "names", {})
 
         if hasattr(obb, 'xyxyxyxy') and obb.xyxyxyxy is not None:
             xy8 = obb.xyxyxyxy.cpu().numpy()
@@ -246,9 +288,12 @@ def _yolo_detect_obb(img_bgr, imgsz, conf):
                 polygon = pts8.reshape(4, 2)
                 confidence = float(confs[idx])
                 cls_id = int(cls_ids[idx])
-                cls_name = yolo_model.names.get(cls_id, str(cls_id)) if isinstance(yolo_model.names, dict) else (
-                    yolo_model.names[cls_id] if 0 <= cls_id < len(yolo_model.names) else str(cls_id)
-                )
+                if isinstance(names, dict):
+                    cls_name = names.get(cls_id, str(cls_id))
+                elif isinstance(names, (list, tuple)) and 0 <= cls_id < len(names):
+                    cls_name = names[cls_id]
+                else:
+                    cls_name = str(cls_id)
                 out.append((polygon, confidence, cls_name))
 
         elif hasattr(obb, 'xywhr') and obb.xywhr is not None:
@@ -261,9 +306,12 @@ def _yolo_detect_obb(img_bgr, imgsz, conf):
                 polygon = cv2.boxPoints(rect)
                 confidence = float(confs[idx])
                 cls_id = int(cls_ids[idx])
-                cls_name = yolo_model.names.get(cls_id, str(cls_id)) if isinstance(yolo_model.names, dict) else (
-                    yolo_model.names[cls_id] if 0 <= cls_id < len(yolo_model.names) else str(cls_id)
-                )
+                if isinstance(names, dict):
+                    cls_name = names.get(cls_id, str(cls_id))
+                elif isinstance(names, (list, tuple)) and 0 <= cls_id < len(names):
+                    cls_name = names[cls_id]
+                else:
+                    cls_name = str(cls_id)
                 out.append((polygon, confidence, cls_name))
 
         return out
@@ -523,6 +571,7 @@ _det_miss_frames   = 0        # consecutive processed frames with no detection
 def _render_stream_frame():
     global _last_boxes, _frame_idx, _last_ocr_time, _show_blur_ema
     global _ocr_pending_since, _last_best_bbox, _stable_frames, _det_miss_frames
+    global _bbox_detected, _bbox_last_seen
 
     if not CAMERA_ENABLED:
         raise RuntimeError("Camera disabled")
@@ -543,13 +592,21 @@ def _render_stream_frame():
         frame = cv2.rotate(frame, cv2.ROTATE_180)
 
     # OBB detection (on interval)
-    if yolo_model is not None and (_frame_idx % STREAM_DET_INTERVAL == 0):
+    if (_frame_idx % STREAM_DET_INTERVAL) == 0:
+        detector = None
         try:
-            obbs = _yolo_detect_obb(frame, STREAM_IMG_SIZE, STREAM_CONF)
-            _last_boxes = obbs
-        except Exception as e:
-            log.error(f"Error in OBB detection: {e}")
-            _last_boxes = []
+            detector = _ensure_yolo_model()
+        except HTTPException as exc:
+            log.error("Detector unavailable (%s): %s", exc.status_code, exc.detail)
+        except Exception as exc:
+            log.error("Detector ensure failed: %s", exc)
+        if detector is not None:
+            try:
+                obbs = _yolo_detect_obb(detector, frame, STREAM_IMG_SIZE, STREAM_CONF)
+                _last_boxes = obbs
+            except Exception as e:
+                log.error(f"Error in OBB detection: {e}")
+                _last_boxes = []
 
     _frame_idx += 1
 
@@ -563,6 +620,13 @@ def _render_stream_frame():
         best_conf = best_det[1]
         for (poly, c, cls) in _last_boxes:
             _draw_obb_poly(frame, poly, f"{cls} {c:.2f}")
+
+    if _last_boxes:
+        _bbox_detected = True
+        _bbox_last_seen = now
+    elif _bbox_detected and (_bbox_last_seen > 0.0):
+        if (now - _bbox_last_seen) >= BBOX_MISS_TIMEOUT_SEC:
+            _bbox_detected = False
 
     # Blur measurement + EMA
     blur_val = measure_blur(frame)
@@ -735,6 +799,46 @@ def reset_latest_result():
     _latest_result = None
     _latest_result_ts = time.time()
     return {"ok": True}
+
+@router.get("/detector_mode")
+def get_detector_mode():
+    try:
+        mode = current_detector_mode()
+        weights = _resolve_detector_weights(mode)
+    except ValueError:
+        mode = DEFAULT_DETECTOR_MODE
+        weights = DETECTOR_MODE_WEIGHTS.get(mode)
+    return {"mode": mode, "weights": weights}
+
+@router.post("/detector_mode")
+def set_detector_mode(payload: Dict[str, Any]):
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    mode = payload.get("mode")
+    if not isinstance(mode, str):
+        raise HTTPException(status_code=400, detail="Mode must be a string")
+    mode_key = mode.strip().lower()
+    try:
+        _ensure_yolo_model(mode_key)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("Unexpected detector mode error: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to switch detector mode") from exc
+    weights = _resolve_detector_weights(mode_key)
+    return {"mode": current_detector_mode(), "weights": weights}
+
+@router.get("/bbox_status")
+def bbox_status():
+    last_seen = _bbox_last_seen if _bbox_last_seen else None
+    age = None
+    if _bbox_last_seen:
+        age = max(0.0, time.time() - _bbox_last_seen)
+    return {
+        "detected": _bbox_detected,
+        "last_seen": last_seen,
+        "age": age,
+    }
 
 @router.get("/health")
 def health():

@@ -8,6 +8,7 @@ import { MedicalIcon, MedicalIconType } from "@/components/ui/MedicalIcons";
 import Image from "next/image";
 
 const VIDEO_PATH = "/rfid/collectionGuide.mp4";
+const BBOX_POLL_INTERVAL_MS = 500;
 
 function resolveBackendBase(): string {
   // Optional: use environment variable first
@@ -50,6 +51,18 @@ function resolveTtsBase(): string {
   return `${protocol}://${window.location.hostname}:8001`;
 }
 
+function resolveOcrBase(): string {
+  const env = process.env.NEXT_PUBLIC_OCR_API_BASE;
+  if (env) {
+    return env.replace(/\/$/, "");
+  }
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const protocol = window.location.protocol === "https:" ? "https" : "http";
+  return `${protocol}://${window.location.hostname}:9000`;
+}
+
 interface InstructionRecord {
   location: string;
   directions: string;
@@ -71,9 +84,21 @@ const RfidScreen: React.FC = () => {
   const audioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(
     null
   );
+  const [streamUrl, setStreamUrl] = useState<string>("");
+  const ocrBaseRef = useRef<string>("");
+  const detectionSeenRef = useRef<boolean>(false);
+  const collectedOnceRef = useRef<boolean>(false);
+  const streamImgRef = useRef<HTMLImageElement | null>(null);
 
   const dest = searchParams.get("dest");
   const baseUrl = resolveBackendBase();
+
+  useEffect(() => {
+    if (dispensing) {
+      detectionSeenRef.current = false;
+      collectedOnceRef.current = false;
+    }
+  }, [dispensing]);
 
   // Fetch destination info (icon, unit number)
   useEffect(() => {
@@ -96,13 +121,12 @@ const RfidScreen: React.FC = () => {
     fetchDestinationInfo();
   }, [dest]);
 
-  // Fetch instructions, play audio, send subtitle
+  // Prefetch instructions and audio for later playback
   useEffect(() => {
     if (!dest) return;
     let isCancelled = false;
 
-    const fetchAndSpeak = async () => {
-      send({ type: "action", action: "hear" });
+    const fetchInstructions = async () => {
       try {
         const response = await fetch("/instructions.json", {
           cache: "no-store",
@@ -131,6 +155,10 @@ const RfidScreen: React.FC = () => {
 
         if (!match) {
           console.warn("No matching instructions found for destination:", dest);
+          if (!isCancelled) {
+            setLastDirections(null);
+            setLastAudioB64(null);
+          }
           return;
         }
         if (isCancelled) return;
@@ -141,6 +169,7 @@ const RfidScreen: React.FC = () => {
         const apiBase = resolveTtsBase();
         if (!apiBase) {
           console.warn("Unable to resolve TTS base URL");
+          setLastAudioB64(null);
           return;
         }
 
@@ -164,73 +193,61 @@ const RfidScreen: React.FC = () => {
           typeof ttsPayload?.audio_wav_b64 === "string"
             ? ttsPayload.audio_wav_b64.replace(/\s+/g, "")
             : "";
-        setLastAudioB64(b64);
         if (!b64) {
           throw new Error("Missing audio payload from TTS response");
         }
         if (isCancelled) return;
-
-        const binary = window.atob(b64);
-        const buffer = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) {
-          buffer[i] = binary.charCodeAt(i);
-        }
-        const blob = new Blob([buffer], { type: "audio/wav" });
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = { audio, url };
-
-        const cleanup = () => {
-          if (audioRef.current?.audio === audio) {
-            audioRef.current = null;
-          }
-          URL.revokeObjectURL(url);
-        };
-
-        audio.onended = cleanup;
-        audio.onerror = cleanup;
-
-        try {
-          send({ type: "subtitle", text: directions });
-          await audio.play();
-        } catch (playError) {
-          cleanup();
-          throw playError;
-        }
+        setLastAudioB64(b64);
       } catch (error) {
-        console.error("Failed to fetch and play instructions audio", error);
+        if (!isCancelled) {
+          setLastDirections(null);
+          setLastAudioB64(null);
+          console.error("Failed to prepare instructions audio", error);
+        }
       }
     };
 
-    fetchAndSpeak();
+    fetchInstructions();
 
     return () => {
       isCancelled = true;
-      const current = audioRef.current;
-      if (current) {
-        current.audio.pause();
-        current.audio.src = "";
-        URL.revokeObjectURL(current.url);
-        audioRef.current = null;
-      }
     };
   }, [dest]);
 
   useEffect(() => {
+    if (!dest) return;
+
     async function handleTags() {
       try {
-        // 1️⃣ GET request
         const rfidUrl = resolveRfidReaderUrl();
         if (!rfidUrl) throw new Error("RFID reader URL is not configured.");
+
+        console.log("Sending destination confirmation to RFID:", dest);
+        const confirmRes = await fetch(rfidUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "destinationConfirmation",
+            destination: dest,
+          }),
+        });
+        if (!confirmRes.ok) {
+          throw new Error(
+            `Failed to confirm destination with RFID: ${confirmRes.status}`
+          );
+        }
+
         console.log("Requesting RFID reader at:", rfidUrl);
         const espRes = await fetch(rfidUrl);
-        if (!espRes.ok)
+        if (!espRes.ok) {
           throw new Error(`HTTP error from rfid! status: ${espRes.status}`);
+        }
 
         const tagData = await espRes.json();
         console.log("Received from RFID Reader:", tagData);
 
-        // 2️⃣ POST request to user/backend
         const usersUrl = `${baseUrl}/users/`;
         console.log("Posting to Users", usersUrl);
         const postRes = await fetch(usersUrl, {
@@ -248,7 +265,7 @@ const RfidScreen: React.FC = () => {
           const postResult = await postRes.json();
           console.log("POST result:", postResult);
           setDispensing(false);
-        } else if (postRes.status == 409) {
+        } else if (postRes.status === 409) {
           setDispensing(false);
         } else {
           throw new Error(
@@ -256,11 +273,12 @@ const RfidScreen: React.FC = () => {
           );
         }
       } catch (err) {
-        console.error(err);
+        console.error("RFID handling error:", err);
       }
     }
+
     handleTags();
-  }, []);
+  }, [baseUrl, dest]);
 
   // useEffect(() => {
   //   // Only start the timer when the collection screen is visible (`dispensing` is false)
@@ -279,52 +297,294 @@ const RfidScreen: React.FC = () => {
   //   }
   // }, [dispensing, router]);
 
-  const handleCollected = () => {
-    // send action to server (touchscreen -> hologram)
+  const playTts = useCallback(
+    async (text: string, cachedAudio?: string | null) => {
+      const trimmed = text?.trim();
+      if (!trimmed || typeof window === "undefined") {
+        return;
+      }
+
+      const existing = audioRef.current;
+      if (existing) {
+        existing.audio.pause();
+        existing.audio.src = "";
+        URL.revokeObjectURL(existing.url);
+        audioRef.current = null;
+      }
+
+      let b64 =
+        cachedAudio && cachedAudio.trim().length > 0
+          ? cachedAudio.replace(/\s+/g, "")
+          : null;
+
+      if (!b64) {
+        const ttsBase = resolveTtsBase();
+        if (!ttsBase) {
+          console.warn("Unable to resolve TTS base URL for playback");
+          return;
+        }
+        try {
+          const response = await fetch(`${ttsBase}/speak`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              text: trimmed,
+              return_mode: "json",
+            }),
+          });
+          if (!response.ok) {
+            throw new Error(`TTS request failed: ${response.status}`);
+          }
+          const payload = await response.json();
+          b64 =
+            typeof payload?.audio_wav_b64 === "string"
+              ? payload.audio_wav_b64.replace(/\s+/g, "")
+              : "";
+          if (!b64) {
+            throw new Error("Missing audio payload from TTS response");
+          }
+          setLastAudioB64(b64);
+        } catch (error) {
+          console.warn("Failed to fetch TTS audio", error);
+          return;
+        }
+      }
+
+      if (!b64) {
+        return;
+      }
+
+      try {
+        const binary = window.atob(b64);
+        const buffer = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+          buffer[i] = binary.charCodeAt(i);
+        }
+        const blob = new Blob([buffer], { type: "audio/wav" });
+        const url = URL.createObjectURL(blob);
+
+        await new Promise<void>((resolvePromise, rejectPromise) => {
+          const audio = new Audio(url);
+          audioRef.current = { audio, url };
+
+          const cleanup = () => {
+            if (audioRef.current?.audio === audio) {
+              audioRef.current = null;
+            }
+            URL.revokeObjectURL(url);
+          };
+
+          audio.onended = () => {
+            cleanup();
+            resolvePromise();
+          };
+          audio.onerror = () => {
+            cleanup();
+            rejectPromise(new Error("Audio playback failed"));
+          };
+
+          const playAttempt = audio.play();
+          if (playAttempt) {
+            playAttempt.catch((err) => {
+              cleanup();
+              rejectPromise(err);
+            });
+          }
+        }).catch((err) => {
+          console.warn("TTS audio playback interrupted", err);
+        });
+      } catch (error) {
+        console.warn("Failed to play TTS audio", error);
+      }
+    },
+    []
+  );
+
+  const handleCollected = useCallback(async () => {
+    if (collectedOnceRef.current) {
+      return;
+    }
+    collectedOnceRef.current = true;
+    setStreamUrl("");
+    const base = ocrBaseRef.current;
+    if (base) {
+      fetch(`${base}/detector_mode`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ mode: "default" }),
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+        })
+        .catch((error) => {
+          console.warn("Failed to reset detector mode after collection", error);
+        });
+      ocrBaseRef.current = "";
+    }
+
+    const instructionsText = lastDirections?.trim();
+
+    if (instructionsText) {
+      try {
+        send({ type: "action", action: "hear" });
+      } catch (err) {
+        console.warn("Failed to send hear action", err);
+      }
+      try {
+        send({ type: "subtitle", text: instructionsText });
+      } catch (err) {
+        console.warn("Failed to send instructions subtitle", err);
+      }
+      await playTts(instructionsText, lastAudioB64);
+    } else {
+      const fallback = t("rfid.stickerCollectedFallback", {
+        defaultValue: "Sticker collected. Thank you.",
+      });
+      if (fallback) {
+        try {
+          send({ type: "subtitle", text: fallback });
+        } catch (err) {
+          console.warn("Failed to send fallback subtitle", err);
+        }
+        await playTts(fallback);
+      }
+    }
+
     try {
       send({ type: "action", action: "idle" });
     } catch (err) {
       console.warn("Failed to send WS idle action", err);
     }
-    // then navigate
     router.replace("/");
     router.refresh();
-  };
+  }, [lastAudioB64, lastDirections, playTts, router, send, setStreamUrl, t]);
+
+  useEffect(() => {
+    if (dispensing) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const ocrBase = resolveOcrBase();
+    if (!ocrBase) {
+      console.warn("OCR service base URL unavailable; skipping sticker verification.");
+      return;
+    }
+
+    ocrBaseRef.current = ocrBase;
+    detectionSeenRef.current = false;
+    const streamEndpoint = `${ocrBase}/stream.mjpg`;
+
+    const setDetectorMode = async (mode: "default" | "sticker") => {
+      try {
+        const response = await fetch(`${ocrBase}/detector_mode`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ mode }),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      } catch (error) {
+        console.warn(`Failed to switch detector mode to ${mode}`, error);
+      }
+    };
+
+    void setDetectorMode("sticker");
+    setStreamUrl(streamEndpoint);
+
+    let cancelled = false;
+    let inFlight = false;
+    const controller = new AbortController();
+    let intervalId: number | null = null;
+
+    const poll = async () => {
+      if (cancelled || collectedOnceRef.current || inFlight) {
+        return;
+      }
+      inFlight = true;
+      try {
+        const response = await fetch(`${ocrBase}/bbox_status`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json();
+        const detected = Boolean(payload?.detected);
+        if (detected) {
+          detectionSeenRef.current = true;
+        } else if (detectionSeenRef.current) {
+          handleCollected().catch((error) => {
+            console.warn("Auto collected handler failed", error);
+          });
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.warn("Failed to poll sticker detection status", error);
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    poll();
+    intervalId = window.setInterval(poll, BBOX_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+      void setDetectorMode("default");
+      ocrBaseRef.current = "";
+      const imgEl = streamImgRef.current;
+      if (imgEl) {
+        imgEl.src = "";
+        imgEl.removeAttribute("src");
+      }
+      setStreamUrl("");
+    };
+  }, [dispensing, handleCollected]);
 
   // Repeat handler
   const handleRepeat = useCallback(() => {
-    if (!lastDirections || !lastAudioB64) return;
+    if (!lastDirections) return;
 
-    // Resend subtitle
-    send({ type: "subtitle", text: lastDirections });
-
-    // Play audio again
-    const binary = window.atob(lastAudioB64);
-    const buffer = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      buffer[i] = binary.charCodeAt(i);
+    try {
+      send({ type: "subtitle", text: lastDirections });
+    } catch (err) {
+      console.warn("Failed to resend subtitle", err);
     }
-    const blob = new Blob([buffer], { type: "audio/wav" });
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audioRef.current = { audio, url };
+    void playTts(lastDirections, lastAudioB64);
+  }, [lastDirections, lastAudioB64, playTts, send]);
 
-    const cleanup = () => {
-      if (audioRef.current?.audio === audio) {
-        audioRef.current = null;
-      }
-      URL.revokeObjectURL(url);
-    };
-
-    audio.onended = cleanup;
-    audio.onerror = cleanup;
-
-    audio.play().catch(cleanup);
-  }, [lastDirections, lastAudioB64, send]);
+  const backgroundStreamElement = streamUrl ? (
+    <img
+      ref={streamImgRef}
+      src={streamUrl}
+      alt=""
+      className="hidden"
+      aria-hidden="true"
+    />
+  ) : null;
 
   if (dispensing) {
     return (
       <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
+        {backgroundStreamElement}
         <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
           {/* Header Section */}
           <div className="mb-12">
@@ -378,7 +638,7 @@ const RfidScreen: React.FC = () => {
               onClick={handleRepeat}
               variant="ghost"
               className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
-              disabled={!lastAudioB64}
+              disabled={!lastDirections}
             >
               🔊 Repeat Instructions
             </Button>
@@ -389,6 +649,7 @@ const RfidScreen: React.FC = () => {
   } else {
     return (
       <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
+        {backgroundStreamElement}
         <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
           <div className="mb-8">
             <div className="inline-flex items-center justify-center w-20 h-20 mb-6 bg-green-500/10 rounded-full">
@@ -443,12 +704,14 @@ const RfidScreen: React.FC = () => {
               onClick={handleRepeat}
               variant="ghost"
               className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
-              disabled={!lastAudioB64}
+              disabled={!lastDirections}
             >
               🔊 Repeat Instructions
             </Button>
             <Button
-              onClick={handleCollected}
+              onClick={() => {
+                void handleCollected();
+              }}
               variant="ghost"
               className=" bg-hospital-teal hover:bg-hospital-teal/90 text-white kiosk-button"
             >

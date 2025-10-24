@@ -35,6 +35,21 @@ const CameraScreen: React.FC = () => {
     const base = resolveOcrBase();
     setApiBase(base);
     if (base) {
+      fetch(`${base}/detector_mode`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ mode: "default" }),
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+        })
+        .catch((error) => {
+          console.warn("Failed to ensure default detector mode", error);
+        });
       setStreamUrl(`${base}/stream.mjpg`);
     }
     return () => {
