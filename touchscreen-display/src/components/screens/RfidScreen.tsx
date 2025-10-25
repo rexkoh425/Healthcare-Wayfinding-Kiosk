@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { useRouter, useSearchParams } from "next/navigation";
 import useWebSocket from "@/lib/useWebSocket";
 import { MedicalIcon, MedicalIconType } from "@/components/ui/MedicalIcons";
+import { SchoolIcon, SchoolIconType } from "@/components/ui/SchoolIcons";
 import Image from "next/image";
 
 const VIDEO_PATH = "/rfid/collectionGuide.mp4";
@@ -345,11 +346,15 @@ const RfidScreen: React.FC = () => {
               <p className="text-4xl font-semibold text-hospital-teal">
                 {dest}
               </p>
-              {/* Medical Icon and Unit Number */}
+              {/* Icon and Unit Number */}
               <div className="flex flex-col items-center justify-center">
                 {icon && (
-                  <MedicalIcon
-                    type={icon as MedicalIconType}
+                  // <MedicalIcon
+                  //   type={icon as MedicalIconType}
+                  //   className="w-16 h-16 mb-2"
+                  // />
+                  <SchoolIcon
+                    type={icon as SchoolIconType}
                     className="w-16 h-16 mb-2"
                   />
                 )}
