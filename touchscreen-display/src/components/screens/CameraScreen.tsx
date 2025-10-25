@@ -138,7 +138,7 @@ const CameraScreen: React.FC = () => {
 
   return (
     <div className="relative flex flex-col items-center justify-center h-[80vh]">
-      <Card className="w-[90vw] max-w-none p-12 text-center kiosk-card flex flex-col items-center scale-110">
+      <Card className="w-[90vw] max-w-none p-12 text-center kiosk-card flex flex-col scale-110">
         {/* Video + Camera Row */}
         <div className="flex flex-col md:flex-row items-center justify-center gap-6 mb-6 w-full">
           {/* Instructional Video */}
@@ -173,41 +173,37 @@ const CameraScreen: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex flex-col space-y-4 w-full items-center">
-          <div className="w-full max-w-6xl mx-auto">
-            <Button
-              onClick={handleScan}
-              size="lg"
-              disabled={loading}
-              className={`w-full bg-hospital-teal text-white py-6 text-lg kiosk-button ${
-                loading
-                  ? "cursor-not-allowed opacity-80"
-                  : "hover:bg-hospital-teal/90"
-              }`}
-            >
-              {loading ? (
-                <Spinner size={28} />
-              ) : (
-                <>
-                  <Search className="mr-2 h-5 w-5" />
-                  Scan Registration Slip
-                </>
-              )}
-            </Button>
-          </div>
+        <div className="flex flex-col space-y-4">
+          <Button
+            onClick={handleScan}
+            size="lg"
+            disabled={loading}
+            className={`w-full bg-hospital-teal text-white py-8 text-3xl kiosk-button ${
+              loading
+                ? "cursor-not-allowed opacity-80"
+                : "hover:bg-hospital-teal/90"
+            }`}
+          >
+            {loading ? (
+              <Spinner size={28} />
+            ) : (
+              <>
+                <Search className="mr-2 h-8 w-8" />
+                Scan Registration Slip
+              </>
+            )}
+          </Button>
         </div>
 
-        <div className="w-full max-w-6xl mx-auto mt-4">
-          <div className="flex justify-start">
-            <Button
-              onClick={handleBack}
-              variant="ghost"
-              className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
-              disabled={loading}
-            >
-              Back
-            </Button>
-          </div>
+        <div className="flex justify-between mt-6">
+          <Button
+            onClick={handleBack}
+            variant="ghost"
+            className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
+            disabled={loading}
+          >
+            Back
+          </Button>
         </div>
       </Card>
 

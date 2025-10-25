@@ -296,7 +296,7 @@ const ChatScreen: React.FC = () => {
           <h1 className="text-4xl font-bold text-hospital-blue-gray mb-2">
             Wayfinding Assistant
           </h1>
-          <p className="text-lg text-hospital-blue-gray/70">
+          <p className="text-2xl text-hospital-blue-gray/70">
             Ask me for directions to navigate the hospital
           </p>
         </div>

@@ -328,8 +328,8 @@ const RfidScreen: React.FC = () => {
 
   if (dispensing) {
     return (
-      <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
-        <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
+      <div className="flex flex-col items-center justify-center h-[80vh] animate-fade-in">
+        <Card className="w-[90vw] max-w-none p-12 text-center kiosk-card flex flex-col scale-110">
           {/* Header Section */}
           <div className="mb-12">
             <div className="inline-flex items-center justify-center w-20 h-20 mb-6 bg-hospital-teal/10 rounded-full animate-pulse-dot">
@@ -381,7 +381,7 @@ const RfidScreen: React.FC = () => {
             <Button
               onClick={handleRepeat}
               variant="ghost"
-              className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
+              className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
               disabled={!lastAudioB64}
             >
               🔊 Repeat Instructions
@@ -392,8 +392,8 @@ const RfidScreen: React.FC = () => {
     );
   } else {
     return (
-      <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
-        <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
+      <div className="flex flex-col items-center justify-center h-[80vh] animate-fade-in">
+        <Card className="w-[90vw] max-w-none p-12 text-center kiosk-card flex flex-col scale-110">
           <div className="mb-8">
             <div className="inline-flex items-center justify-center w-20 h-20 mb-6 bg-green-500/10 rounded-full">
               <svg
@@ -446,7 +446,7 @@ const RfidScreen: React.FC = () => {
             <Button
               onClick={handleRepeat}
               variant="ghost"
-              className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
+              className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
               disabled={!lastAudioB64}
             >
               🔊 Repeat Instructions
@@ -454,7 +454,7 @@ const RfidScreen: React.FC = () => {
             <Button
               onClick={handleCollected}
               variant="ghost"
-              className=" bg-hospital-teal hover:bg-hospital-teal/90 text-white kiosk-button"
+              className="bg-hospital-teal hover:bg-hospital-teal/90 text-white py-8 text-2xl kiosk-button"
             >
               Collected
             </Button>

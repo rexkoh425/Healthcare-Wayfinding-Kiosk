@@ -19,13 +19,13 @@ const HomeScreen: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
-      <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
+    <div className="flex flex-col items-center justify-center h-[80vh] animate-fade-in">
+      <Card className="w-[90vw] max-w-none p-12 text-center kiosk-card flex flex-col scale-110">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-hospital-blue-gray mb-2">
+          <h2 className="text-5xl font-bold text-hospital-blue-gray mb-2">
             Hello, I&apos;m your wayfinding assistant!
           </h2>
-          <p className="text-hospital-blue-gray/70 text-xl max-w-xl mx-auto">
+          <p className="text-hospital-blue-gray/70 text-3xl max-w-xl mx-auto">
             Guiding you through every step.
           </p>
         </div>
@@ -35,9 +35,9 @@ const HomeScreen: React.FC = () => {
           <Button
             onClick={handleTalk}
             size="lg"
-            className="bg-hospital-teal hover:bg-hospital-teal/90 text-white py-6 text-lg kiosk-button"
+            className="bg-hospital-teal hover:bg-hospital-teal/90 text-white py-8 text-3xl kiosk-button"
           >
-            <Mic className="mr-2 h-5 w-5" />
+            <Mic className="mr-2 h-8 w-8" />
             Press here to tell me where you want to go
           </Button>
 
@@ -45,10 +45,10 @@ const HomeScreen: React.FC = () => {
           <Button
             onClick={handleScan}
             size="lg"
-            className="bg-hospital-teal hover:bg-hospital-teal/90 text-white py-6 text-lg kiosk-button"
+            className="bg-hospital-teal hover:bg-hospital-teal/90 text-white py-8 text-3xl kiosk-button"
           >
-            <ScanText className="mr-2 h-5 w-5" />
-            Scan your appointment details on your registration slip
+            <ScanText className="mr-2 h-8 w-8" />
+            Scan your registration slip
           </Button>
         </div>
       </Card>
