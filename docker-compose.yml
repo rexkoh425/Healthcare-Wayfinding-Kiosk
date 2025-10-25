@@ -179,6 +179,21 @@ services:
       - ./rfid:/app
       - ./certs:/certs:ro
     command: python rfidv1.py
+  
+  nfc:
+    build:
+      context: ./nfc
+    privileged: true
+    devices:
+      - "/dev/ttyAMA0:/dev/serial0"
+    ports:
+      - "5001:5001"
+    environment:
+      GPIOZERO_PIN_FACTORY: lgpio
+    volumes:
+      - ./nfc:/app
+      - ./certs:/certs:ro
+    command: python nfc.py
 
 volumes:
   eic_node_modules:

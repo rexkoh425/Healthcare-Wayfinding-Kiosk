@@ -178,6 +178,37 @@ docker run --rm \
     rfidimage
 ```
 
+
+## NFC 
+Setup
+1. Enable UART on Rpi
+```bash
+sudo raspi-config
+```
+- “Would you like a login shell to be accessible over serial?” → No
+- “Would you like the serial port hardware to be enabled?” → Yes
+```bash
+sudo reboot
+```
+then do 
+```bash
+sudo nano /boot/firmware/config.txt
+#add the lines below under [all]
+enable_uart=1
+dtoverlay=disable-bt
+#after write then 
+sudo reboot
+```
+
+```bash
+cd nfc
+python3 -m venv .venv --system-site-packages
+source .venv/bin/activate
+pip install -r requirements.txt
+sudo .venv/bin/python nfc.py
+```
+
+
 ## Clearing Space in Rpi
 
 ```bash
