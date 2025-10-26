@@ -69,6 +69,7 @@ const RfidScreen: React.FC = () => {
   const [unitNumber, setUnitNumber] = useState<string | null>(null);
   const [lastDirections, setLastDirections] = useState<string | null>(null);
   const [lastAudioB64, setLastAudioB64] = useState<string | null>(null);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const audioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(
     null
   );
@@ -233,17 +234,26 @@ const RfidScreen: React.FC = () => {
           URL.revokeObjectURL(url);
         };
 
-        audio.onended = cleanup;
-        audio.onerror = cleanup;
+        setIsAudioPlaying(true);
+        audio.onended = () => {
+          setIsAudioPlaying(false);
+          cleanup();
+        };
+        audio.onerror = () => {
+          setIsAudioPlaying(false);
+          cleanup();
+        };
 
         try {
           send({ type: "subtitle", text: directions });
           await audio.play();
         } catch (playError) {
+          setIsAudioPlaying(false);
           cleanup();
           throw playError;
         }
       } catch (error) {
+        setIsAudioPlaying(false);
         console.error("Failed to fetch and play instructions audio", error);
       }
     };
@@ -365,10 +375,19 @@ const RfidScreen: React.FC = () => {
       URL.revokeObjectURL(url);
     };
 
-    audio.onended = cleanup;
-    audio.onerror = cleanup;
-
-    audio.play().catch(cleanup);
+    setIsAudioPlaying(true);
+    audio.onended = () => {
+      setIsAudioPlaying(false);
+      cleanup();
+    };
+    audio.onerror = () => {
+      setIsAudioPlaying(false);
+      cleanup();
+    };
+    audio.play().catch(() => {
+      setIsAudioPlaying(false);
+      cleanup();
+    });
   }, [lastDirections, lastAudioB64, send]);
 
   if (dispensing) {
@@ -431,7 +450,7 @@ const RfidScreen: React.FC = () => {
               onClick={handleRepeat}
               variant="ghost"
               className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
-              disabled={!lastAudioB64}
+              disabled={!lastAudioB64 || isAudioPlaying}
             >
               🔊 Repeat Instructions
             </Button>
@@ -483,7 +502,7 @@ const RfidScreen: React.FC = () => {
             </div>
 
             <Image
-              src="/rfid/wearGuide.jpg" // put your jpg inside /public folder
+              src="/rfid/wearGuide.jpg"
               alt="RFID Wear Guide"
               width={300}
               height={200}
@@ -496,7 +515,7 @@ const RfidScreen: React.FC = () => {
               onClick={handleRepeat}
               variant="ghost"
               className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
-              disabled={!lastAudioB64}
+              disabled={!lastAudioB64 || isAudioPlaying}
             >
               🔊 Repeat Instructions
             </Button>
