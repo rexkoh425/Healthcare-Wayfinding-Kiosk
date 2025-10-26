@@ -81,50 +81,50 @@ services:
       - ./hologram-display:/usr/share/nginx/html:ro
       - ./certs:/certs:ro
 
-  ocr:
-    build:
-      context: ./ocr-service
-      dockerfile: Dockerfile
-    container_name: eic-ocr
+  # ocr:
+  #   build:
+  #     context: ./ocr-service
+  #     dockerfile: Dockerfile
+  #   container_name: eic-ocr
 
-    devices:
-      - /dev/video0:/dev/video0
-      - /dev/video1:/dev/video1 # keep if present; harmless if absent
-      - /dev/media0:/dev/media0
-      - /dev/media1:/dev/media1
-      - /dev/media2:/dev/media2
-      - /dev/media3:/dev/media3
-    privileged: true
+  #   devices:
+  #     - /dev/video0:/dev/video0
+  #     - /dev/video1:/dev/video1 # keep if present; harmless if absent
+  #     - /dev/media0:/dev/media0
+  #     - /dev/media1:/dev/media1
+  #     - /dev/media2:/dev/media2
+  #     - /dev/media3:/dev/media3
+  #   privileged: true
 
-    group_add:
-      - video
+  #   group_add:
+  #     - video
 
-    volumes:
-      - ./ocr-service:/app
-      - /run/udev:/run/udev:ro # ok to keep for hotplug info
-      - ../ocr_latest:/data/ocr_latest
-      - ./certs:/certs:ro
+  #   volumes:
+  #     - ./ocr-service:/app
+  #     - /run/udev:/run/udev:ro # ok to keep for hotplug info
+  #     - ../ocr_latest:/data/ocr_latest
+  #     - ./certs:/certs:ro
 
-    environment:
-      PYTHONUNBUFFERED: 1
-      YOLO_CONFIG_DIR: /app/.ultralytics
-      CAMERA_ENABLED: "1"
-      USB_DEVICE_INDEX: "0" # change to 1/2 if needed
-      USB_WIDTH: "1280"
-      USB_HEIGHT: "720"
-      USB_FPS: "30"
-      YOLO_DEBUG_DIR: /app/api/debug
-      YOLO_DEBUG_LIMIT: "50"
+  #   environment:
+  #     PYTHONUNBUFFERED: 1
+  #     YOLO_CONFIG_DIR: /app/.ultralytics
+  #     CAMERA_ENABLED: "1"
+  #     USB_DEVICE_INDEX: "0" # change to 1/2 if needed
+  #     USB_WIDTH: "1280"
+  #     USB_HEIGHT: "720"
+  #     USB_FPS: "30"
+  #     YOLO_DEBUG_DIR: /app/api/debug
+  #     YOLO_DEBUG_LIMIT: "50"
 
-    command: >
-      python3 -m uvicorn service:app
-      --host 0.0.0.0
-      --port 9000
-      --log-level debug
+  #   command: >
+  #     python3 -m uvicorn service:app
+  #     --host 0.0.0.0
+  #     --port 9000
+  #     --log-level debug
 
-    expose:
-      - "9000"
-    restart: unless-stopped
+  #   expose:
+  #     - "9000"
+  #   restart: unless-stopped
 
   chatbot-backend:
     build:
@@ -139,7 +139,8 @@ services:
     volumes:
       - ./certs:/certs:ro
       - ./chatbot/app/voices:/voices:ro
-      - ./data/directions.csv:/data/directions.csv:ro
+      - ./data/directions-nus.csv:/data/directions-nus.csv:ro
+      - ./data/directions-ah.csv:/data/directions-ah.csv:ro
     command: >
       uvicorn app.dialog:app
       --host 0.0.0.0
@@ -154,7 +155,7 @@ services:
     depends_on:
       - server
       # - alexandra-backend
-      - ocr
+      # - ocr
       - chatbot-backend
       - touchscreen-display
     volumes:
@@ -173,12 +174,14 @@ services:
       context: ./rfid
     ports:
       - "5000:5000"
+    privileged: true
     devices:
-      - "/dev/input/by-id/usb-ARM_CM0_USB_HID_Keyboard_BAF1D93D1201-event-kbd:/dev/input/event1"
+      # - "/dev/input/by-id/usb-ARM_CM0_USB_HID_Keyboard_BAF1D93D1201-event-kbd:/dev/input/event1" #for keyboard mode 
+      - "/dev/ttyACM0:/dev/ttyACM0"
     volumes:
       - ./rfid:/app
       - ./certs:/certs:ro
-    command: python rfidv1.py
+    command: python rfid-serial.py
   
   nfc:
     build:
@@ -193,6 +196,8 @@ services:
     volumes:
       - ./nfc:/app
       - ./certs:/certs:ro
+      - ./data/directions-nus.csv:/data/directions-nus.csv:ro
+      - ./data/directions-ah.csv:/data/directions-ah.csv:ro
     command: python nfc.py
 
 volumes:

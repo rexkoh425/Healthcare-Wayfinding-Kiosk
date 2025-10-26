@@ -7,6 +7,20 @@ import { SmartphoneNfc, Loader2, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import useWebSocket from "@/lib/useWebSocket";
 
+function resolveNfcUrl(): string {
+  const env = process.env.NEXT_PUBLIC_RFID_URL;
+  if (env) return env;
+
+  if (typeof window !== "undefined") {
+    // const protocol = window.location.protocol === "https:" ? "https" : "http";
+    const protocol = "https";
+    const host = window.location.hostname;
+    return `${protocol}://${host}:5001`;
+  }
+
+  return "";
+}
+
 const NfcScreen: React.FC = () => {
   const router = useRouter();
   const { send } = useWebSocket();
@@ -19,7 +33,8 @@ const NfcScreen: React.FC = () => {
 
     try {
       // Example: fetch destination from nfc card after tap
-      const res = await fetch("/api/read-card");
+      const nfc_api = resolveNfcUrl()
+      const res = await fetch(nfc_api);
 
       if (!res.ok) {
         throw new Error("Failed to read card. Please try again.");

@@ -76,6 +76,47 @@ const RfidScreen: React.FC = () => {
   const dest = searchParams.get("dest");
   const baseUrl = resolveBackendBase();
 
+  async function fetchRfidTag() {
+    const rfidUrl = resolveRfidReaderUrl() + "/getTag";
+    if (!rfidUrl) throw new Error("RFID reader URL is not configured.");
+    console.log("Requesting RFID reader at:", rfidUrl);
+
+    const res = await fetch(rfidUrl);
+    if (!res.ok) throw new Error(`HTTP error from RFID! status: ${res.status}`);
+    return res.json();
+  }
+
+  async function createUser(tagId: string, destination: string) {
+    const usersUrl = `${baseUrl}/users/`;
+    console.log("Posting to Users", usersUrl);
+
+    const res = await fetch(usersUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rfidTagId: tagId, destination }),
+    });
+    return res;
+  }
+
+  async function updateUser(tagId: string, destination: string) {
+    const updateUserUrl = `${baseUrl}/users/${tagId}/destination`;
+    console.log("Patching to Users", updateUserUrl);
+
+    const res = await fetch(updateUserUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ destination }),
+    });
+    return res;
+  }
+
+  async function checkTagRemoved() {
+    const removeUrl = resolveRfidReaderUrl() + "/tagRemoved";
+    const res = await fetch(removeUrl);
+    if (!res.ok) throw new Error(`Remove check error: ${res.status}`);
+    return res.json();
+  }
+
   // Fetch destination info (icon, unit number)
   useEffect(() => {
     if (!dest) return;
@@ -113,7 +154,7 @@ const RfidScreen: React.FC = () => {
     const fetchAndSpeak = async () => {
       send({ type: "action", action: "hear" });
       try {
-        const response = await fetch("/instructions.json", {
+        const response = await fetch("/instructions-nus.json", {
           cache: "no-store",
         });
         if (!response.ok) {
@@ -219,52 +260,55 @@ const RfidScreen: React.FC = () => {
         audioRef.current = null;
       }
     };
-  }, [dest, send]);
+  }, [dest]);
 
   useEffect(() => {
+    let isMounted = true;
     async function handleTags() {
       try {
-        // 1️⃣ GET request
-        const rfidUrl = resolveRfidReaderUrl();
-        if (!rfidUrl) throw new Error("RFID reader URL is not configured.");
-        console.log("Requesting RFID reader at:", rfidUrl);
-        const espRes = await fetch(rfidUrl);
-        if (!espRes.ok)
-          throw new Error(`HTTP error from rfid! status: ${espRes.status}`);
-
-        const tagData = await espRes.json();
+        const tagData = await fetchRfidTag();
         console.log("Received from RFID Reader:", tagData);
 
-        // 2️⃣ POST request to user/backend
-        const usersUrl = `${baseUrl}/users/`;
-        console.log("Posting to Users", usersUrl);
-        const postRes = await fetch(usersUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            rfidTagId: tagData.epc,
-            destination: dest,
-          }),
-        });
+        if (!tagData.epc || !dest) return;
+        const tagId: string = tagData.epc; // now TS knows it's a string
+        const newUserRes = await createUser(tagData.epc, dest);
 
-        if (postRes.ok) {
-          const postResult = await postRes.json();
+        if (newUserRes.ok) {
+          const postResult = await newUserRes.json();
           console.log("POST result:", postResult);
-          setDispensing(false);
-        } else if (postRes.status == 409) {
-          setDispensing(false);
+          if (isMounted) setDispensing(false);
+        } else if (newUserRes.status === 409) {
+          const updateRes = await updateUser(tagData.epc, dest);
+          if (updateRes.ok) {
+            const patchResult = await updateRes.json();
+            console.log("Patch Result:", patchResult);
+            if (isMounted) setDispensing(false);
+          } else {
+            throw new Error(
+              `HTTP error from update users api! status: ${updateRes.status}`
+            );
+          }
         } else {
           throw new Error(
-            `HTTP error from users api! status: ${postRes.status}`
+            `HTTP error from new users api! status: ${newUserRes.status}`
           );
+        }
+
+        const removeData = await checkTagRemoved();
+        if (!removeData.epc) {
+          console.log("Tag has been removed");
+          handleCollected();
         }
       } catch (err) {
         console.error(err);
       }
     }
+
     handleTags();
+
+    return () => {
+      isMounted = false;
+    };
   }, [baseUrl, dest]);
 
   // useEffect(() => {
