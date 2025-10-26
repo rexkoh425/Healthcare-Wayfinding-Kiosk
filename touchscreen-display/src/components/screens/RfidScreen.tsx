@@ -40,23 +40,12 @@ function resolveRfidReaderUrl(): string {
   return "";
 }
 
-function resolveTtsBase(): string {
-  const env = process.env.NEXT_PUBLIC_CHATBOT_API_BASE;
-  if (env) {
-    return env.replace(/\/$/, "");
-  }
-  if (typeof window === "undefined") {
-    return "";
-  }
-  const protocol = window.location.protocol === "https:" ? "https" : "http";
-  return `${protocol}://${window.location.hostname}:8001`;
-}
-
 interface InstructionRecord {
   location: string;
   directions: string;
   unit?: string;
   level?: string;
+  file_path?: string;
 }
 
 const RfidScreen: React.FC = () => {
@@ -68,10 +57,8 @@ const RfidScreen: React.FC = () => {
   const [icon, setIcon] = useState<string | null>(null);
   const [unitNumber, setUnitNumber] = useState<string | null>(null);
   const [lastDirections, setLastDirections] = useState<string | null>(null);
-  const [lastAudioB64, setLastAudioB64] = useState<string | null>(null);
-  const audioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(
-    null
-  );
+  const [lastAudioSrc, setLastAudioSrc] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const dest = searchParams.get("dest");
   const baseUrl = resolveBackendBase();
@@ -143,53 +130,28 @@ const RfidScreen: React.FC = () => {
         const directions: string = match.directions.trim();
         setLastDirections(directions);
 
-        const apiBase = resolveTtsBase();
-        if (!apiBase) {
-          console.warn("Unable to resolve TTS base URL");
+        const filePath =
+          typeof match.file_path === "string" ? match.file_path.trim() : "";
+        if (!filePath) {
+          console.warn("Missing audio file path for destination:", dest);
           return;
         }
 
-        const ttsResponse = await fetch(`${apiBase}/speak`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            text: directions,
-            return_mode: "json",
-          }),
-        });
-
-        if (!ttsResponse.ok) {
-          throw new Error(`TTS request failed: ${ttsResponse.status}`);
-        }
-
-        const ttsPayload = await ttsResponse.json();
-        const b64 =
-          typeof ttsPayload?.audio_wav_b64 === "string"
-            ? ttsPayload.audio_wav_b64.replace(/\s+/g, "")
-            : "";
-        setLastAudioB64(b64);
-        if (!b64) {
-          throw new Error("Missing audio payload from TTS response");
-        }
+        const audioSrc = filePath.startsWith("/")
+          ? filePath
+          : `/${filePath}`;
+        setLastAudioSrc(audioSrc);
         if (isCancelled) return;
 
-        const binary = window.atob(b64);
-        const buffer = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) {
-          buffer[i] = binary.charCodeAt(i);
-        }
-        const blob = new Blob([buffer], { type: "audio/wav" });
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = { audio, url };
+        const audio = new Audio(audioSrc);
+        audioRef.current = audio;
 
         const cleanup = () => {
-          if (audioRef.current?.audio === audio) {
+          if (audioRef.current === audio) {
             audioRef.current = null;
           }
-          URL.revokeObjectURL(url);
+          audio.pause();
+          audio.src = "";
         };
 
         audio.onended = cleanup;
@@ -203,6 +165,7 @@ const RfidScreen: React.FC = () => {
           throw playError;
         }
       } catch (error) {
+        setLastAudioSrc(null);
         console.error("Failed to fetch and play instructions audio", error);
       }
     };
@@ -213,9 +176,8 @@ const RfidScreen: React.FC = () => {
       isCancelled = true;
       const current = audioRef.current;
       if (current) {
-        current.audio.pause();
-        current.audio.src = "";
-        URL.revokeObjectURL(current.url);
+        current.pause();
+        current.src = "";
         audioRef.current = null;
       }
     };
@@ -298,34 +260,28 @@ const RfidScreen: React.FC = () => {
 
   // Repeat handler
   const handleRepeat = useCallback(() => {
-    if (!lastDirections || !lastAudioB64) return;
+    if (!lastDirections || !lastAudioSrc) return;
 
     // Resend subtitle
     send({ type: "subtitle", text: lastDirections });
 
     // Play audio again
-    const binary = window.atob(lastAudioB64);
-    const buffer = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      buffer[i] = binary.charCodeAt(i);
-    }
-    const blob = new Blob([buffer], { type: "audio/wav" });
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audioRef.current = { audio, url };
+    const audio = new Audio(lastAudioSrc);
+    audioRef.current = audio;
 
     const cleanup = () => {
-      if (audioRef.current?.audio === audio) {
+      if (audioRef.current === audio) {
         audioRef.current = null;
       }
-      URL.revokeObjectURL(url);
+      audio.pause();
+      audio.src = "";
     };
 
     audio.onended = cleanup;
     audio.onerror = cleanup;
 
     audio.play().catch(cleanup);
-  }, [lastDirections, lastAudioB64, send]);
+  }, [lastDirections, lastAudioSrc, send]);
 
   if (dispensing) {
     return (
@@ -387,7 +343,7 @@ const RfidScreen: React.FC = () => {
               onClick={handleRepeat}
               variant="ghost"
               className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
-              disabled={!lastAudioB64}
+              disabled={!lastAudioSrc}
             >
               🔊 Repeat Instructions
             </Button>
@@ -452,7 +408,7 @@ const RfidScreen: React.FC = () => {
               onClick={handleRepeat}
               variant="ghost"
               className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
-              disabled={!lastAudioB64}
+              disabled={!lastAudioSrc}
             >
               🔊 Repeat Instructions
             </Button>
