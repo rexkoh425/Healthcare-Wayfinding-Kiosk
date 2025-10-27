@@ -123,7 +123,7 @@ const RfidScreen: React.FC = () => {
         const query = destinationLabel
           ? `?dest=${encodeURIComponent(destinationLabel)}`
           : "";
-        router.replace(`/final${query}`);
+        router.replace(`/collect${query}`);
         router.refresh();
       } catch (err) {
         console.error("RFID handling failed", err);

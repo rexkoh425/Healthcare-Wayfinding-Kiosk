@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import useWebSocket from "@/lib/useWebSocket";
-import Image from "next/image";
+import { Hand } from "lucide-react";
 
 interface InstructionRecord {
   location: string;
@@ -16,38 +16,8 @@ interface InstructionRecord {
   file_path?: string;
 }
 
-const RFID_POLL_INTERVAL_MS = 1500;
 const instructionsPath =
   process.env.NEXT_PUBLIC_INSTRUCTIONS_PATH ?? "/instructions-nus.json";
-
-function resolveRfidReaderUrl(): string {
-  const env = process.env.NEXT_PUBLIC_RFID_URL;
-  if (env) {
-    return env.replace(/\/$/, "");
-  }
-
-  if (typeof window !== "undefined") {
-    const protocol = window.location.protocol === "https:" ? "https" : "http";
-    return `${protocol}://${window.location.hostname}:5000`;
-  }
-
-  return "";
-}
-
-function isTagRemoved(payload: unknown): boolean {
-  if (!payload || typeof payload !== "object") {
-    return false;
-  }
-  const record = payload as Record<string, unknown>;
-  if (typeof record.removed === "boolean") {
-    return record.removed;
-  }
-  const epc = record.epc;
-  if (typeof epc === "string") {
-    return epc.trim().length === 0;
-  }
-  return true;
-}
 
 const FinalPage: React.FC = () => {
   const router = useRouter();
@@ -62,9 +32,7 @@ const FinalPage: React.FC = () => {
   const [directions, setDirections] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [audioFinished, setAudioFinished] = useState(false);
-  const [tagRemoved, setTagRemoved] = useState(false);
-  const [autoNavigated, setAutoNavigated] = useState(false);
+  const hasNavigatedRef = useRef(false);
 
   const destinationLabel = useMemo(() => dest?.trim() ?? "", [dest]);
 
@@ -94,8 +62,7 @@ const FinalPage: React.FC = () => {
         const normalized = destinationLabel.toLowerCase();
         const instructions = payload.filter(
           (item): item is InstructionRecord =>
-            typeof item?.location === "string" &&
-            typeof item?.directions === "string",
+            typeof item?.location === "string" && typeof item?.directions === "string",
         );
 
         const match = instructions.find(
@@ -107,7 +74,8 @@ const FinalPage: React.FC = () => {
         }
 
         const text = match.directions.trim();
-        const filePath = typeof match.file_path === "string" ? match.file_path.trim() : "";
+        const filePath =
+          typeof match.file_path === "string" ? match.file_path.trim() : "";
         if (!filePath) {
           throw new Error("Missing audio file path for destination.");
         }
@@ -121,12 +89,10 @@ const FinalPage: React.FC = () => {
 
         const resolvedSrc = filePath.startsWith("/") ? filePath : `/${filePath}`;
         setAudioSrc(resolvedSrc);
-        setAudioFinished(false);
       } catch (err) {
         console.error("Failed to load instructions", err);
         if (!cancelled) {
           setError("We could not load the instructions audio. Please ask for assistance.");
-          setAudioFinished(true);
         }
       } finally {
         if (!cancelled) {
@@ -141,6 +107,20 @@ const FinalPage: React.FC = () => {
       cancelled = true;
     };
   }, [destinationLabel, send]);
+
+  const navigateHome = useCallback(() => {
+    if (hasNavigatedRef.current) {
+      return;
+    }
+    hasNavigatedRef.current = true;
+    try {
+      send({ type: "action", action: "idle" });
+    } catch (err) {
+      console.warn("Failed to send WS idle action", err);
+    }
+    router.replace("/");
+    router.refresh();
+  }, [router, send]);
 
   useEffect(() => {
     if (!audioSrc) {
@@ -159,22 +139,23 @@ const FinalPage: React.FC = () => {
     };
 
     audio.onended = () => {
-      setAudioFinished(true);
       cleanup();
+      navigateHome();
     };
     audio.onerror = () => {
-      setAudioFinished(true);
+      console.error("Unable to play instructions audio");
       cleanup();
+      setError("We could not load the instructions audio. Please ask for assistance.");
     };
 
     audio.play().catch((err) => {
       console.error("Unable to play instructions audio", err);
-      setAudioFinished(true);
       cleanup();
+      setError("We could not load the instructions audio. Please ask for assistance.");
     });
 
     return cleanup;
-  }, [audioSrc]);
+  }, [audioSrc, navigateHome]);
 
   useEffect(() => {
     return () => {
@@ -186,94 +167,6 @@ const FinalPage: React.FC = () => {
       }
     };
   }, []);
-
-  const handleRepeat = useCallback(() => {
-    if (!audioSrc || !directions) {
-      return;
-    }
-
-    send({ type: "subtitle", text: directions });
-
-    const audio = new Audio(audioSrc);
-    audioRef.current = audio;
-    setAudioFinished(false);
-
-    const cleanup = () => {
-      if (audioRef.current === audio) {
-        audioRef.current = null;
-      }
-      audio.pause();
-      audio.src = "";
-    };
-
-    audio.onended = () => {
-      setAudioFinished(true);
-      cleanup();
-    };
-    audio.onerror = () => {
-      setAudioFinished(true);
-      cleanup();
-    };
-    audio.play().catch((err) => {
-      console.error("Unable to replay instructions audio", err);
-      setAudioFinished(true);
-      cleanup();
-    });
-  }, [audioSrc, directions, send]);
-
-  const navigateHome = useCallback(() => {
-    setAutoNavigated(true);
-    try {
-      send({ type: "action", action: "idle" });
-    } catch (err) {
-      console.warn("Failed to send WS idle action", err);
-    }
-    router.replace("/");
-    router.refresh();
-  }, [router, send]);
-
-  useEffect(() => {
-    if (tagRemoved || autoNavigated) {
-      return;
-    }
-
-    const base = resolveRfidReaderUrl();
-    if (!base) {
-      console.warn("RFID reader URL unavailable; cannot monitor tag removal.");
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    const poll = async () => {
-      try {
-        const response = await fetch(`${base}/tagRemoved`, { cache: "no-store" });
-        if (!response.ok) {
-          return;
-        }
-        const payload = await response.json();
-        if (!cancelled && isTagRemoved(payload)) {
-          setTagRemoved(true);
-        }
-      } catch (err) {
-        console.warn("Failed to poll tag removal", err);
-      }
-    };
-
-    poll();
-    const intervalId = window.setInterval(poll, RFID_POLL_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [tagRemoved, autoNavigated]);
-
-  useEffect(() => {
-    if (audioFinished && tagRemoved && !autoNavigated) {
-      navigateHome();
-    }
-  }, [audioFinished, tagRemoved, autoNavigated, navigateHome]);
 
   if (loading) {
     return (
@@ -290,8 +183,8 @@ const FinalPage: React.FC = () => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
-        <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
-          <p className="text-3xl font-bold text-hospital-blue-gray mb-4">{error}</p>
+        <Card className="w-full max-w-3xl p-8 text-center kiosk-card space-y-6">
+          <p className="text-3xl font-bold text-hospital-blue-gray">{error}</p>
           <Button
             onClick={navigateHome}
             className="bg-hospital-teal hover:bg-hospital-teal/90 text-white"
@@ -305,42 +198,17 @@ const FinalPage: React.FC = () => {
 
   return (
     <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
-      <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
-        <div className="space-y-4">
-          <p className="text-3xl font-bold text-hospital-blue-gray">
-            Please collect your sticker.
+      <Card className="w-full max-w-3xl p-8 text-center kiosk-card space-y-6">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="bg-hospital-teal/10 rounded-full p-6">
+            <Hand className="w-16 h-16 text-hospital-teal rotate-90" />
+          </div>
+          <h1 className="text-3xl font-bold text-hospital-blue-gray">
+            Please pay attention to the hologram.
+          </h1>
+          <p className="text-2xl text-hospital-blue-gray/80">
+            Your directions are on the way{destinationLabel ? ` to ${destinationLabel}` : ""}.
           </p>
-          <p className="text-3xl font-bold text-hospital-blue-gray">
-            Stick it vertically on your pants before proceeding to {destinationLabel}.
-          </p>
-        </div>
-
-        <div className="flex items-center justify-center w-80 p-4 rounded-xl mx-auto">
-          <Image
-            src="/rfid/wearGuide.jpg"
-            alt="RFID Wear Guide"
-            width={300}
-            height={200}
-            className="rounded-lg object-contain"
-          />
-        </div>
-
-        <div className="flex justify-between mt-6">
-          <Button
-            onClick={handleRepeat}
-            variant="ghost"
-            className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
-            disabled={!audioSrc}
-          >
-            🔊 Repeat Instructions
-          </Button>
-          <Button
-            onClick={navigateHome}
-            variant="ghost"
-            className="bg-hospital-teal hover:bg-hospital-teal/90 text-white py-8 text-2xl kiosk-button"
-          >
-            Collected
-          </Button>
         </div>
       </Card>
     </div>
