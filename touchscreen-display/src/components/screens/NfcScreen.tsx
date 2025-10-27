@@ -33,7 +33,7 @@ const NfcScreen: React.FC = () => {
 
     try {
       // Example: fetch destination from nfc card after tap
-      const nfc_api = resolveNfcUrl()
+      const nfc_api = resolveNfcUrl();
       const res = await fetch(nfc_api);
 
       if (!res.ok) {
@@ -47,6 +47,7 @@ const NfcScreen: React.FC = () => {
         throw new Error("No destination found on card.");
       }
 
+      send({ type: "action", action: "hear" });
       // If only one destination:
       router.push(`/rfid?dest=${encodeURIComponent(destinations[0])}`);
     } catch (err: unknown) {
