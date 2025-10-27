@@ -1,4 +1,4 @@
-# Use official Python 3.11 slim image for ARM (Raspberry Pi compatible)
+# Use official Python 3.11 slim image for ARM (compatible with Raspberry Pi)
 FROM python:3.11-slim
 
 # Set environment variables
@@ -10,23 +10,21 @@ WORKDIR /app
 # Copy requirements first (for caching)
 COPY requirements.txt .
 
-# Install system dependencies for evdev and USB
+# Install dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3-dev \
-        libudev-dev \
-        build-essential \
-        usbutils \
-    && rm -rf /var/lib/apt/lists/*
+        python3-serial \
+        && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages
-RUN pip install --no-cache-dir flask flask-cors evdev pyusb
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install rpi-lgpio
 
-# Copy application code
+# Copy app code
 COPY . .
 
-# Expose Flask port
+# Expose Flask portd
 EXPOSE 5000
 
 # Run the Python script
-CMD ["python", "rfidv1.py"]
+CMD ["python", "rfid-serial.py"]

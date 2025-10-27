@@ -10,6 +10,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS, cross_origin
 import time
 import logging
+import csv
 
 # -----------------------
 # Logging Setup
@@ -27,6 +28,22 @@ app.config['CORS_HEADERS'] = 'Content-Type'
 SERVER_PORT = 5001
 CERT_FILE = "/certs/cert.pem"
 KEY_FILE = "/certs/key.pem"
+
+
+# -----------------------
+# Get Location NFC ID mappings
+# -----------------------
+filename = '/data/directions-nus.csv'
+mapping = {}
+
+with open(filename, 'r', newline='') as file:
+    reader = csv.reader(file)
+    headers = next(reader)  # skip header if present
+
+    for row in reader:
+        # row[0] = first column, row[2] = third column
+        mapping[row[2]] = [row[0]]
+
 
 # -----------------------
 # NFC Setup
@@ -56,17 +73,20 @@ def get_uid():
             logger.info("Rerunning")
             continue
     uid_str = ''.join(f'{i:02x}' for i in uid)
-    logger.info("NFC UID: {}".format(uid_str))
+    logger.info("UID: {}".format(uid_str))
     return uid_str 
 
 @app.route("/", methods=["GET"])
 @cross_origin()
 def read_nfc():
     uid = get_uid()
-    return jsonify({"uid": uid})
+    dest = mapping[uid]
+    logger.info(f"Destination: {dest}")
+    return jsonify({"destinations": dest}) #only 1 destination now
     
 
 if __name__ == "__main__":
     logger.info(f"Starting NFC Flask server on port {SERVER_PORT}")
     app.run(host="0.0.0.0", port=SERVER_PORT, ssl_context=(CERT_FILE, KEY_FILE))
+    # get_uid()
     # GPIO.cleanup()

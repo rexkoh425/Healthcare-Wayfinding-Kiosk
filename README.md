@@ -139,7 +139,10 @@ To view how the app will look like in your browser with the dimensions of an iPa
 3. Rotate the screen such that it becomes landscape
 
 ## RFID
+> [!NOTE]
+> RFID Reader is currently set in USB Mode
 
+# HID Mode
 Setup
 
 ```bash
@@ -178,6 +181,21 @@ docker run --rm \
     rfidimage
 ```
 
+# USB Mode 
+```bash
+cd rfid
+sudo apt update
+python3 -m venv .venv --system-site-packages
+source .venv/bin/activate
+pip install -r requirements.txt
+sudo .venv/bin/python rfid-serial.py
+```
+
+Find RFID Reader port 
+```bash
+ls /dev/ttyACM*  #ls /dev/ttyUSB* if it doesnt work 
+python3 -m serial.tools.miniterm /dev/ttyACM0 9600 #can use this to test if the reader is sending values to this port 
+```
 
 ## NFC 
 Setup

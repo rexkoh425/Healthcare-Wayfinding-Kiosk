@@ -4,6 +4,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS, cross_origin
 import time
 import logging
+import RPi.GPIO as GPIO
 # import usb.core
 # import usb.util
 # -----------------------
@@ -12,6 +13,14 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# -----------------------
+# Dispensing Setup
+# -----------------------
+MOTOR_PIN1 = 17  # Change to your GPIO pin number
+MOTOR_PIN2 = 27
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(MOTOR_PIN1, GPIO.OUT)
+GPIO.setup(MOTOR_PIN2, GPIO.OUT)
 
 # -----------------------
 # Flask Setup
@@ -97,7 +106,26 @@ def wait_for_tag_removal(timeout=3.0):
                         buffer.append("-")
 
 # -----------------------
-# Functions
+# Dispensing Functions
+# -----------------------
+def motor_on():
+    """Turn motor on"""
+    GPIO.output(MOTOR_PIN1, GPIO.HIGH)
+    GPIO.output(MOTOR_PIN2, GPIO.LOW)
+
+def motor_off():
+    """Turn motor off"""
+    GPIO.output(MOTOR_PIN1, GPIO.LOW)
+    GPIO.output(MOTOR_PIN2, GPIO.LOW)
+
+def rotate_x(seconds):
+    motor_on()
+    time.sleep(seconds)
+    motor_off()
+
+
+# -----------------------
+# RFID Functions
 # -----------------------
 
 def find_rfid_device():
@@ -171,7 +199,10 @@ def read_tag():
 def readTag():
     """Read one RFID tag and return it as JSON."""
     ensure_device()
+    # rotate_x(0.6)
+    motor_on()
     epc = read_tag()
+    motor_off()
     if epc:
         return jsonify({"epc": epc.lower()})
     else:
@@ -197,3 +228,4 @@ if __name__ == "__main__":
     ensure_device()   
     logger.info(f"Starting RFID Flask server on port {SERVER_PORT}")
     app.run(host="0.0.0.0", port=SERVER_PORT, ssl_context=(CERT_FILE, KEY_FILE))
+    GPIO.cleanup()
