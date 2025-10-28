@@ -3,8 +3,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SchoolIcon, type SchoolIconType } from "@/components/ui/SchoolIcons";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 import useWebSocket from "@/lib/useWebSocket";
 
 function resolveBackendBase(): string {
@@ -35,6 +37,23 @@ function resolveRfidReaderUrl(): string {
   return "";
 }
 
+const SCHOOL_ICON_TYPES: readonly SchoolIconType[] = [
+  "lecture",
+  "bakery",
+  "convenience-store",
+  "lab",
+  "classroom",
+  "workshop",
+  "building",
+];
+
+function isSchoolIconType(value: string | undefined | null): value is SchoolIconType {
+  if (!value) {
+    return false;
+  }
+  return (SCHOOL_ICON_TYPES as readonly string[]).includes(value.trim());
+}
+
 const RfidScreen: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -43,6 +62,18 @@ const RfidScreen: React.FC = () => {
 
   const dest = searchParams.get("dest");
   const destinationLabel = useMemo(() => dest?.trim() ?? "", [dest]);
+  const iconParam = searchParams.get("icon");
+  const unitParam = searchParams.get("unitNumber") ?? searchParams.get("unit");
+
+  const iconType = useMemo(
+    () => {
+      const trimmed = iconParam?.trim();
+      return isSchoolIconType(trimmed) ? (trimmed as SchoolIconType) : null;
+    },
+    [iconParam],
+  );
+
+  const unitLabel = useMemo(() => unitParam?.trim() ?? "", [unitParam]);
 
   const [dispensing, setDispensing] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -153,35 +184,106 @@ const RfidScreen: React.FC = () => {
     router.refresh();
   };
 
+  const isProcessing = dispensing && !error;
+  const hasError = Boolean(error);
+
   return (
-    <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in">
-      <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
-        {dispensing && !error ? (
+    <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in px-6">
+      <Card className="w-[90vw] max-w-4xl p-12 text-center kiosk-card flex flex-col items-center">
+        {isProcessing && (
           <>
-            <p className="text-3xl font-bold text-hospital-blue-gray">
-              Dispensing Sticker...
+            <div className="mb-12 flex flex-col items-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 mb-6 bg-hospital-teal/10 rounded-full animate-pulse-dot">
+                <div className="w-10 h-10 bg-hospital-teal rounded-full" />
+              </div>
+
+              <h1 className="text-5xl font-bold text-hospital-blue-gray mb-4">
+                Dispensing Sticker...
+              </h1>
+
+              {(destinationLabel || iconType || unitLabel) && (
+                <div className="inline-flex items-center px-8 py-4 bg-hospital-blue/10 rounded-xl gap-8">
+                  <p className="text-4xl font-semibold text-hospital-teal">
+                    {destinationLabel ||
+                      t("common.loading", { defaultValue: "Loading..." })}
+                  </p>
+                  {(iconType || unitLabel) && (
+                    <div className="flex flex-col items-center justify-center text-hospital-blue-gray">
+                      {iconType && (
+                        <SchoolIcon
+                          type={iconType}
+                          className="w-16 h-16 mb-2 text-hospital-teal"
+                        />
+                      )}
+                      {unitLabel && (
+                        <div className="text-2xl font-semibold text-hospital-blue-gray mb-2">
+                          {unitLabel}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-center gap-3 mb-12">
+              {[0, 0.2, 0.4].map((delay) => (
+                <div
+                  key={delay}
+                  className="w-3 h-3 bg-hospital-teal rounded-full animate-pulse-dot"
+                  style={{ animationDelay: `${delay}s` }}
+                />
+              ))}
+            </div>
+
+            <p className="text-xl text-hospital-blue-gray/60 mb-12 max-w-2xl">
+              Please hold your wristband steady while we prepare your wayfinding sticker.
             </p>
-            {destinationLabel && (
-              <p className="text-3xl font-bold text-hospital-blue-gray mt-2">
-                {destinationLabel}
-              </p>
-            )}
-          </>
-        ) : (
-          <>
-            <p className="text-3xl font-bold text-hospital-blue-gray mb-4">
-              {error ?? "Redirecting you to the final instructions..."}
-            </p>
-            {error && (
+
+            <div className="flex justify-end w-full">
               <Button
                 onClick={handleBack}
                 variant="ghost"
-                className="bg-hospital-teal hover:bg-hospital-teal/90 text-white kiosk-button"
+                className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
               >
-                {t("common.back")}
+                Need Help
               </Button>
-            )}
+            </div>
           </>
+        )}
+
+        {!isProcessing && !hasError && (
+          <div className="flex flex-col items-center space-y-6">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-hospital-teal/10 rounded-full">
+              <CheckCircle2 className="w-12 h-12 text-hospital-teal" />
+            </div>
+            <h2 className="text-4xl font-bold text-hospital-blue-gray">
+              Sticker ready!
+            </h2>
+            <p className="text-2xl text-hospital-blue-gray/70">
+              Redirecting you to your collection instructions...
+            </p>
+          </div>
+        )}
+
+        {hasError && (
+          <div className="flex flex-col items-center space-y-10">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-red-100 rounded-full">
+              <AlertCircle className="w-12 h-12 text-red-500" />
+            </div>
+            <h2 className="text-4xl font-bold text-hospital-blue-gray leading-snug">
+              {error}
+            </h2>
+            <p className="text-2xl text-hospital-blue-gray/60 max-w-2xl">
+              Please try again or ask a staff member for assistance.
+            </p>
+            <Button
+              onClick={handleBack}
+              className="bg-hospital-teal hover:bg-hospital-teal/90 text-white text-xl px-10 py-6"
+            >
+              {t("common.back")}
+            </Button>
+          </div>
         )}
       </Card>
     </div>
