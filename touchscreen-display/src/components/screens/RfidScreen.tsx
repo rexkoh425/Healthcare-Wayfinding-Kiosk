@@ -1,536 +1,293 @@
-"use client";
+'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SchoolIcon, type SchoolIconType } from "@/components/ui/SchoolIcons";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslation } from "react-i18next";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 import useWebSocket from "@/lib/useWebSocket";
-import { MedicalIcon, MedicalIconType } from "@/components/ui/MedicalIcons";
-import { SchoolIcon, SchoolIconType } from "@/components/ui/SchoolIcons";
-import Image from "next/image";
-
-const VIDEO_PATH = "/rfid/collectionGuide.mp4";
 
 function resolveBackendBase(): string {
-  // Optional: use environment variable first
   const env = process.env.NEXT_PUBLIC_BASE_URL;
-  if (env) return env.replace(/\/$/, "");
-
-  // Fallback: browser environment
-  if (typeof window !== "undefined") {
-    const protocol = window.location.protocol === "https:" ? "https" : "http";
-    const host = window.location.hostname;
-    return `${protocol}://${host}`;
+  if (env) {
+    return env.replace(/\/$/, "");
   }
 
-  // Server-side fallback
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "https" : "http";
+    return `${protocol}://${window.location.hostname}:8000`;
+  }
+
   return "";
 }
 
 function resolveRfidReaderUrl(): string {
   const env = process.env.NEXT_PUBLIC_RFID_URL;
-  if (env) return env;
+  if (env) {
+    return env.replace(/\/$/, "");
+  }
 
   if (typeof window !== "undefined") {
     const protocol = window.location.protocol === "https:" ? "https" : "http";
-    const host = window.location.hostname;
-    return `${protocol}://${host}:5000`;
+    return `${protocol}://${window.location.hostname}:5000`;
   }
 
   return "";
 }
 
-function resolveTtsBase(): string {
-  const env = process.env.NEXT_PUBLIC_CHATBOT_API_BASE;
-  if (env) {
-    return env.replace(/\/$/, "");
-  }
-  if (typeof window === "undefined") {
-    return "";
-  }
-  const protocol = window.location.protocol === "https:" ? "https" : "http";
-  return `${protocol}://${window.location.hostname}:8001`;
-}
+const SCHOOL_ICON_TYPES: readonly SchoolIconType[] = [
+  "lecture",
+  "bakery",
+  "convenience-store",
+  "lab",
+  "classroom",
+  "workshop",
+  "building",
+];
 
-interface InstructionRecord {
-  location: string;
-  directions: string;
-  unit?: string;
-  level?: string;
+function isSchoolIconType(value: string | undefined | null): value is SchoolIconType {
+  if (!value) {
+    return false;
+  }
+  return (SCHOOL_ICON_TYPES as readonly string[]).includes(value.trim());
 }
 
 const RfidScreen: React.FC = () => {
   const router = useRouter();
-  const { send } = useWebSocket();
   const searchParams = useSearchParams();
-
-  const [dispensing, setDispensing] = useState(true);
-  const [icon, setIcon] = useState<string | null>(null);
-  const [unitNumber, setUnitNumber] = useState<string | null>(null);
-  const [lastDirections, setLastDirections] = useState<string | null>(null);
-  const [lastAudioB64, setLastAudioB64] = useState<string | null>(null);
-  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
-  const audioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(
-    null
-  );
+  const { t } = useTranslation();
+  const { send } = useWebSocket();
 
   const dest = searchParams.get("dest");
-  const baseUrl = resolveBackendBase();
+  const destinationLabel = useMemo(() => dest?.trim() ?? "", [dest]);
+  const iconParam = searchParams.get("icon");
+  const unitParam = searchParams.get("unitNumber") ?? searchParams.get("unit");
 
-  async function fetchRfidTag() {
-    const rfidUrl = resolveRfidReaderUrl() + "/getTag";
-    if (!rfidUrl) throw new Error("RFID reader URL is not configured.");
-    console.log("Requesting RFID reader at:", rfidUrl);
+  const iconType = useMemo(
+    () => {
+      const trimmed = iconParam?.trim();
+      return isSchoolIconType(trimmed) ? (trimmed as SchoolIconType) : null;
+    },
+    [iconParam],
+  );
 
-    const res = await fetch(rfidUrl);
-    if (!res.ok) throw new Error(`HTTP error from RFID! status: ${res.status}`);
-    return res.json();
-  }
+  const unitLabel = useMemo(() => unitParam?.trim() ?? "", [unitParam]);
 
-  async function createUser(tagId: string, destination: string) {
-    const usersUrl = `${baseUrl}/users/`;
-    console.log("Posting to Users", usersUrl);
+  const [dispensing, setDispensing] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-    const res = await fetch(usersUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rfidTagId: tagId, destination }),
-    });
-    return res;
-  }
-
-  async function updateUser(tagId: string, destination: string) {
-    const updateUserUrl = `${baseUrl}/users/${tagId}/destination`;
-    console.log("Patching to Users", updateUserUrl);
-
-    const res = await fetch(updateUserUrl, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ destination }),
-    });
-    return res;
-  }
-
-  async function checkTagRemoved() {
-    const removeUrl = resolveRfidReaderUrl() + "/tagRemoved";
-    const res = await fetch(removeUrl);
-    if (!res.ok) throw new Error(`Remove check error: ${res.status}`);
-    return res.json();
-  }
-
-  // Fetch destination info (icon, unit number)
   useEffect(() => {
-    if (!dest) return;
-    const fetchDestinationInfo = async () => {
-      try {
-        const res = await fetch(
-          `${baseUrl}/destinations/?name=${encodeURIComponent(dest)}`
-        );
-        if (!res.ok) throw new Error("Failed to fetch destination info");
-        const data: { icon?: string; unitNumber?: string } = await res.json();
-        setIcon(data.icon || null);
-        setUnitNumber(data.unitNumber || null);
-      } catch (err) {
-        console.warn("Could not fetch destination info", err);
-        setIcon(null);
-        setUnitNumber(null);
+    let cancelled = false;
+
+    const handleTags = async () => {
+      if (!destinationLabel) {
+        setError("Missing destination.");
+        setDispensing(false);
+        return;
       }
-    };
-    fetchDestinationInfo();
-  }, [dest, baseUrl]);
 
-  // Fetch instructions, play audio, send subtitle
-  useEffect(() => {
-    if (!dest) return;
-    let isCancelled = false;
-
-    const isInstructionRecord = (item: unknown): item is InstructionRecord => {
-      if (typeof item !== "object" || item === null) return false;
-      const rec = item as Record<string, unknown>;
-      return (
-        typeof rec.location === "string" && typeof rec.directions === "string"
-      );
-    };
-
-    const fetchAndSpeak = async () => {
-      send({ type: "action", action: "hear" });
       try {
-        const response = await fetch("/instructions-nus.json", {
+        const rfidBase = resolveRfidReaderUrl();
+        if (!rfidBase) {
+          throw new Error("RFID reader URL is not configured.");
+        }
+
+        const rfidResponse = await fetch(`${rfidBase}/getTag`, {
           cache: "no-store",
         });
-        if (!response.ok) {
-          throw new Error(`Failed to load instructions: ${response.status}`);
+        if (!rfidResponse.ok) {
+          throw new Error(`RFID reader error: ${rfidResponse.status}`);
         }
 
-        const payload = await response.json();
-        if (!Array.isArray(payload)) {
-          throw new Error("Invalid instructions payload");
+        const tagPayload = await rfidResponse.json();
+        const tagId =
+          typeof tagPayload?.epc === "string" ? tagPayload.epc.trim() : "";
+        if (!tagId) {
+          throw new Error("RFID tag ID missing in response.");
         }
 
-        const instructions = payload.filter(isInstructionRecord);
-
-        const normalized = dest.trim().toLowerCase();
-        const match = instructions.find(
-          (item) =>
-            item.location.trim().toLowerCase() === normalized &&
-            item.directions.trim().length > 0
-        );
-
-        if (!match) {
-          console.warn("No matching instructions found for destination:", dest);
-          return;
-        }
-        if (isCancelled) return;
-
-        const directions: string = match.directions.trim();
-        setLastDirections(directions);
-
-        const apiBase = resolveTtsBase();
-        if (!apiBase) {
-          console.warn("Unable to resolve TTS base URL");
-          return;
+        const backendBase = resolveBackendBase();
+        if (!backendBase) {
+          throw new Error("Backend URL is not configured.");
         }
 
-        const ttsResponse = await fetch(`${apiBase}/speak`, {
+        const createResponse = await fetch(`${backendBase}/users/`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            text: directions,
-            return_mode: "json",
+            rfidTagId: tagId,
+            destination: destinationLabel,
           }),
         });
 
-        if (!ttsResponse.ok) {
-          throw new Error(`TTS request failed: ${ttsResponse.status}`);
-        }
+        if (createResponse.status === 409) {
+          const updateResponse = await fetch(
+            `${backendBase}/users/${encodeURIComponent(tagId)}/destination`,
+            {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ destination: destinationLabel }),
+            },
+          );
 
-        const ttsPayload = await ttsResponse.json();
-        const b64 =
-          typeof ttsPayload?.audio_wav_b64 === "string"
-            ? ttsPayload.audio_wav_b64.replace(/\s+/g, "")
-            : "";
-        setLastAudioB64(b64);
-        if (!b64) {
-          throw new Error("Missing audio payload from TTS response");
-        }
-        if (isCancelled) return;
-
-        const binary = window.atob(b64);
-        const buffer = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) {
-          buffer[i] = binary.charCodeAt(i);
-        }
-        const blob = new Blob([buffer], { type: "audio/wav" });
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = { audio, url };
-
-        const cleanup = () => {
-          if (audioRef.current?.audio === audio) {
-            audioRef.current = null;
-          }
-          URL.revokeObjectURL(url);
-        };
-
-        setIsAudioPlaying(true);
-        audio.onended = () => {
-          setIsAudioPlaying(false);
-          cleanup();
-        };
-        audio.onerror = () => {
-          setIsAudioPlaying(false);
-          cleanup();
-        };
-
-        try {
-          send({ type: "subtitle", text: directions });
-          await audio.play();
-        } catch (playError) {
-          setIsAudioPlaying(false);
-          cleanup();
-          throw playError;
-        }
-      } catch (error) {
-        setIsAudioPlaying(false);
-        console.error("Failed to fetch and play instructions audio", error);
-      }
-    };
-
-    fetchAndSpeak();
-
-    return () => {
-      isCancelled = true;
-      const current = audioRef.current;
-      if (current) {
-        current.audio.pause();
-        current.audio.src = "";
-        URL.revokeObjectURL(current.url);
-        audioRef.current = null;
-      }
-    };
-  }, [dest]);
-
-  useEffect(() => {
-    let isMounted = true;
-    async function handleTags() {
-      try {
-        const tagData = await fetchRfidTag();
-        console.log("Received from RFID Reader:", tagData);
-
-        if (!tagData.epc || !dest) return;
-        const tagId: string = tagData.epc; // now TS knows it's a string
-        const newUserRes = await createUser(tagData.epc, dest);
-
-        if (newUserRes.ok) {
-          const postResult = await newUserRes.json();
-          console.log("POST result:", postResult);
-          if (isMounted) setDispensing(false);
-        } else if (newUserRes.status === 409) {
-          const updateRes = await updateUser(tagData.epc, dest);
-          if (updateRes.ok) {
-            const patchResult = await updateRes.json();
-            console.log("Patch Result:", patchResult);
-            if (isMounted) setDispensing(false);
-          } else {
+          if (!updateResponse.ok) {
             throw new Error(
-              `HTTP error from update users api! status: ${updateRes.status}`
+              `Users update error: ${updateResponse.status}`,
             );
           }
-        } else {
-          throw new Error(
-            `HTTP error from new users api! status: ${newUserRes.status}`
-          );
+        } else if (!createResponse.ok) {
+          throw new Error(`Users create error: ${createResponse.status}`);
         }
 
-        const removeData = await checkTagRemoved();
-        if (!removeData.epc) {
-          console.log("Tag has been removed");
-          handleCollected();
+        if (cancelled) {
+          return;
         }
+
+        setDispensing(false);
+
+        const query = destinationLabel
+          ? `?dest=${encodeURIComponent(destinationLabel)}`
+          : "";
+        router.replace(`/collect${query}`);
+        router.refresh();
       } catch (err) {
-        console.error(err);
+        console.error("RFID handling failed", err);
+        if (!cancelled) {
+          setError(
+            "We could not verify your sticker. Please try again or ask for assistance.",
+          );
+          setDispensing(false);
+        }
       }
-    }
+    };
 
     handleTags();
 
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
-  }, [baseUrl, dest]);
+  }, [destinationLabel, router]);
 
-  // useEffect(() => {
-  //   // Only start the timer when the collection screen is visible (`dispensing` is false)
-  //   if (!dispensing) {
-  //     const inactivityTimer = setTimeout(() => {
-  //       console.log("Timeout: User collect sticker. Navigating home.");
-  //       // Navigate back to the main page after 15 seconds
-  //       send({ type: "action", action: "idle" });
-  //       router.push("/");
-  //     }, 15000); // 15000 milliseconds = 15 seconds
-
-  //     //Cleanup function to clear timer
-  //     return () => {
-  //       clearTimeout(inactivityTimer);
-  //     };
-  //   }
-  // }, [dispensing, router]);
-
-  const handleCollected = () => {
-    // send action to server (touchscreen -> hologram)
+  const handleBack = () => {
     try {
       send({ type: "action", action: "idle" });
     } catch (err) {
       console.warn("Failed to send WS idle action", err);
     }
-    // then navigate
     router.replace("/");
     router.refresh();
   };
 
-  // Repeat handler
-  const handleRepeat = useCallback(() => {
-    if (!lastDirections || !lastAudioB64) return;
+  const isProcessing = dispensing && !error;
+  const hasError = Boolean(error);
 
-    // Resend subtitle
-    send({ type: "subtitle", text: lastDirections });
-
-    // Play audio again
-    const binary = window.atob(lastAudioB64);
-    const buffer = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      buffer[i] = binary.charCodeAt(i);
-    }
-    const blob = new Blob([buffer], { type: "audio/wav" });
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audioRef.current = { audio, url };
-
-    const cleanup = () => {
-      if (audioRef.current?.audio === audio) {
-        audioRef.current = null;
-      }
-      URL.revokeObjectURL(url);
-    };
-
-    setIsAudioPlaying(true);
-    audio.onended = () => {
-      setIsAudioPlaying(false);
-      cleanup();
-    };
-    audio.onerror = () => {
-      setIsAudioPlaying(false);
-      cleanup();
-    };
-    audio.play().catch(() => {
-      setIsAudioPlaying(false);
-      cleanup();
-    });
-  }, [lastDirections, lastAudioB64, send]);
-
-  if (dispensing) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[80vh] animate-fade-in">
-        <Card className="w-[90vw] max-w-none p-12 text-center kiosk-card flex flex-col scale-110">
-          {/* Header Section */}
-          <div className="mb-12">
-            <div className="inline-flex items-center justify-center w-20 h-20 mb-6 bg-hospital-teal/10 rounded-full animate-pulse-dot">
-              <div className="w-10 h-10 bg-hospital-teal rounded-full"></div>
-            </div>
-
-            <h1 className="text-5xl font-bold text-hospital-blue-gray mb-4">
-              Dispensing Sticker...
-            </h1>
-
-            <div className="inline-flex items-center px-8 py-4 bg-hospital-blue/10 rounded-xl gap-8">
-              {/* Destination Name */}
-              <p className="text-4xl font-semibold text-hospital-teal">
-                {dest}
-              </p>
-              {/* Icon and Unit Number */}
-              <div className="flex flex-col items-center justify-center">
-                {icon && (
-                  // <MedicalIcon
-                  //   type={icon as MedicalIconType}
-                  //   className="w-16 h-16 mb-2"
-                  // />
-                  <SchoolIcon
-                    type={icon as SchoolIconType}
-                    className="w-16 h-16 mb-2"
-                  />
-                )}
-                {unitNumber && (
-                  <div className="text-2xl font-semibold text-hospital-blue-gray mb-2">
-                    {unitNumber}
-                  </div>
-                )}
+  return (
+    <div className="flex flex-col items-center justify-center h-[85vh] animate-fade-in px-6">
+      <Card className="w-[90vw] max-w-4xl p-12 text-center kiosk-card flex flex-col items-center">
+        {isProcessing && (
+          <>
+            <div className="mb-12 flex flex-col items-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 mb-6 bg-hospital-teal/10 rounded-full animate-pulse-dot">
+                <div className="w-10 h-10 bg-hospital-teal rounded-full" />
               </div>
+
+              <h1 className="text-5xl font-bold text-hospital-blue-gray mb-4">
+                Dispensing Sticker...
+              </h1>
+
+              {(destinationLabel || iconType || unitLabel) && (
+                <div className="inline-flex items-center px-8 py-4 bg-hospital-blue/10 rounded-xl gap-8">
+                  <p className="text-4xl font-semibold text-hospital-teal">
+                    {destinationLabel ||
+                      t("common.loading", { defaultValue: "Loading..." })}
+                  </p>
+                  {(iconType || unitLabel) && (
+                    <div className="flex flex-col items-center justify-center text-hospital-blue-gray">
+                      {iconType && (
+                        <SchoolIcon
+                          type={iconType}
+                          className="w-16 h-16 mb-2 text-hospital-teal"
+                        />
+                      )}
+                      {unitLabel && (
+                        <div className="text-2xl font-semibold text-hospital-blue-gray mb-2">
+                          {unitLabel}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
 
-          {/* Loading Animation */}
-          <div className="flex items-center justify-center gap-3 mb-12">
-            {[0, 0.2, 0.4].map((delay) => (
-              <div
-                key={delay}
-                className="w-3 h-3 bg-hospital-teal rounded-full animate-pulse-dot"
-                style={{ animationDelay: `${delay}s` }}
-              ></div>
-            ))}
-          </div>
-
-          <p className="text-xl text-hospital-blue-gray/60 mb-12">
-            Please wait while we prepare your wayfinding sticker
-          </p>
-
-          <div className="flex justify-between">
-            <Button
-              onClick={handleRepeat}
-              variant="ghost"
-              className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
-              disabled={!lastAudioB64 || isAudioPlaying}
-            >
-              🔊 Repeat Instructions
-            </Button>
-          </div>
-        </Card>
-      </div>
-    );
-  } else {
-    return (
-      <div className="flex flex-col items-center justify-center h-[80vh] animate-fade-in">
-        <Card className="w-[90vw] max-w-none p-12 text-center kiosk-card flex flex-col scale-110">
-          <div className="mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 mb-6 bg-green-500/10 rounded-full">
-              <svg
-                className="w-10 h-10 text-green-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={3}
-                  d="M5 13l4 4L19 7"
+            <div className="flex items-center justify-center gap-3 mb-12">
+              {[0, 0.2, 0.4].map((delay) => (
+                <div
+                  key={delay}
+                  className="w-3 h-3 bg-hospital-teal rounded-full animate-pulse-dot"
+                  style={{ animationDelay: `${delay}s` }}
                 />
-              </svg>
+              ))}
             </div>
 
-            <h1 className="text-3xl font-bold text-hospital-blue-gray mb-4">
-              Sticker Ready!
-            </h1>
-            <p className="text-2xl text-hospital-blue-gray/80 font-medium">
-              Please collect your sticker & stick it vertically on your pants
+            <p className="text-xl text-hospital-blue-gray/60 mb-12 max-w-2xl">
+              Please wait while we prepare your wayfinding sticker.
+            </p>
+
+            <div className="flex justify-end w-full">
+              <Button
+                onClick={handleBack}
+                variant="ghost"
+                className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
+              >
+                Need Help
+              </Button>
+            </div>
+          </>
+        )}
+
+        {!isProcessing && !hasError && (
+          <div className="flex flex-col items-center space-y-6">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-hospital-teal/10 rounded-full">
+              <CheckCircle2 className="w-12 h-12 text-hospital-teal" />
+            </div>
+            <h2 className="text-4xl font-bold text-hospital-blue-gray">
+              Sticker ready!
+            </h2>
+            <p className="text-2xl text-hospital-blue-gray/70">
+              Redirecting you to your collection instructions...
             </p>
           </div>
+        )}
 
-          <div className="flex items-center justify-center w-80 gap-8 p-4 rounded-xl mx-auto">
-            <div className="w-1/2 overflow-hidden rounded-lg bg-black">
-              <video
-                src={VIDEO_PATH}
-                className="w-full h-full object-cover rounded-lg rotate-180"
-                autoPlay
-                loop
-                muted
-                playsInline // Ensures it plays on mobile devices
-                width={300}
-                height={200}
-              ></video>
+        {hasError && (
+          <div className="flex flex-col items-center space-y-10">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-red-100 rounded-full">
+              <AlertCircle className="w-12 h-12 text-red-500" />
             </div>
-
-            <Image
-              src="/rfid/wearGuide.jpg"
-              alt="RFID Wear Guide"
-              width={300}
-              height={200}
-              className="rounded-lg object-contain w-1/2 h-auto"
-            />
-          </div>
-
-          <div className="flex justify-between">
+            <h2 className="text-4xl font-bold text-hospital-blue-gray leading-snug">
+              {error}
+            </h2>
+            <p className="text-2xl text-hospital-blue-gray/60 max-w-2xl">
+              Please try again or ask a staff member for assistance.
+            </p>
             <Button
-              onClick={handleRepeat}
-              variant="ghost"
-              className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-2xl"
-              disabled={!lastAudioB64 || isAudioPlaying}
+              onClick={handleBack}
+              className="bg-hospital-teal hover:bg-hospital-teal/90 text-white text-xl px-10 py-6"
             >
-              🔊 Repeat Instructions
-            </Button>
-            <Button
-              onClick={handleCollected}
-              variant="ghost"
-              className="bg-hospital-teal hover:bg-hospital-teal/90 text-white py-8 text-2xl kiosk-button"
-            >
-              Collected
+              {t("common.back")}
             </Button>
           </div>
-        </Card>
-      </div>
-    );
-  }
+        )}
+      </Card>
+    </div>
+  );
 };
 
 export default RfidScreen;
