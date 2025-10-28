@@ -237,7 +237,7 @@ const RfidScreen: React.FC = () => {
             </div>
 
             <p className="text-xl text-hospital-blue-gray/60 mb-12 max-w-2xl">
-              Please hold your wristband steady while we prepare your wayfinding sticker.
+              Please wait while we prepare your wayfinding sticker.
             </p>
 
             <div className="flex justify-end w-full">
