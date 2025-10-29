@@ -138,7 +138,7 @@ const CollectSticker: React.FC = () => {
             variant="ghost"
             className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10 text-xl"
           >
-            Need Help
+            Restart
           </Button>
         </div>
       </Card>
