@@ -148,7 +148,6 @@ const NfcScreen: React.FC = () => {
             onClick={handleBack}
             variant="ghost"
             className="text-hospital-blue-gray/70 hover:text-hospital-blue-gray hover:bg-hospital-blue/10"
-            disabled={loading}
           >
             Back
           </Button>
