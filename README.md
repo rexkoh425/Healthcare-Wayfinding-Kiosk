@@ -71,6 +71,17 @@ To run in detached mode
 docker-compose up -d
 ```
 
+### Generating local TLS certificates
+
+Most services (Caddy, hologram-display, NFC/RFID) expect to find `/certs/cert.pem` and `/certs/key.pem`.  
+The files are gitignored, so create them once per machine before starting Docker Compose:
+
+```
+docker run --rm -v "${PWD}/certs:/certs" alpine sh -c "apk add --no-cache openssl && openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /certs/key.pem -out /certs/cert.pem -subj '/CN=localhost'"
+```
+
+Re-run the command whenever you want to regenerate a fresh self-signed certificate.
+
 ## Tech Stack
 
 - [Next.js](https://nextjs.org/docs). Understand how [routing](https://nextjs.org/docs/app/getting-started/project-structure) works if you're creating a new screen, we're using App Router.
