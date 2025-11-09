@@ -1,11 +1,10 @@
-'use client';
+"use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SchoolIcon, type SchoolIconType } from "@/components/ui/SchoolIcons";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslation } from "react-i18next";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import useWebSocket from "@/lib/useWebSocket";
 
@@ -47,7 +46,9 @@ const SCHOOL_ICON_TYPES: readonly SchoolIconType[] = [
   "building",
 ];
 
-function isSchoolIconType(value: string | undefined | null): value is SchoolIconType {
+function isSchoolIconType(
+  value: string | undefined | null
+): value is SchoolIconType {
   if (!value) {
     return false;
   }
@@ -57,7 +58,6 @@ function isSchoolIconType(value: string | undefined | null): value is SchoolIcon
 const RfidScreen: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { t } = useTranslation();
   const { send } = useWebSocket();
 
   const dest = searchParams.get("dest");
@@ -65,13 +65,10 @@ const RfidScreen: React.FC = () => {
   const iconParam = searchParams.get("icon");
   const unitParam = searchParams.get("unitNumber") ?? searchParams.get("unit");
 
-  const iconType = useMemo(
-    () => {
-      const trimmed = iconParam?.trim();
-      return isSchoolIconType(trimmed) ? (trimmed as SchoolIconType) : null;
-    },
-    [iconParam],
-  );
+  const iconType = useMemo(() => {
+    const trimmed = iconParam?.trim();
+    return isSchoolIconType(trimmed) ? (trimmed as SchoolIconType) : null;
+  }, [iconParam]);
 
   const unitLabel = useMemo(() => unitParam?.trim() ?? "", [unitParam]);
 
@@ -133,13 +130,11 @@ const RfidScreen: React.FC = () => {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ destination: destinationLabel }),
-            },
+            }
           );
 
           if (!updateResponse.ok) {
-            throw new Error(
-              `Users update error: ${updateResponse.status}`,
-            );
+            throw new Error(`Users update error: ${updateResponse.status}`);
           }
         } else if (!createResponse.ok) {
           throw new Error(`Users create error: ${createResponse.status}`);
@@ -160,7 +155,7 @@ const RfidScreen: React.FC = () => {
         console.error("RFID handling failed", err);
         if (!cancelled) {
           setError(
-            "We could not verify your sticker. Please try again or ask for assistance.",
+            "We could not verify your sticker. Please try again or ask for assistance."
           );
           setDispensing(false);
         }
@@ -204,8 +199,7 @@ const RfidScreen: React.FC = () => {
               {(destinationLabel || iconType || unitLabel) && (
                 <div className="inline-flex items-center px-8 py-4 bg-hospital-blue/10 rounded-xl gap-8">
                   <p className="text-4xl font-semibold text-hospital-teal">
-                    {destinationLabel ||
-                      t("common.loading", { defaultValue: "Loading..." })}
+                    {destinationLabel || "Loading destination..."}
                   </p>
                   {(iconType || unitLabel) && (
                     <div className="flex flex-col items-center justify-center text-hospital-blue-gray">
@@ -281,7 +275,7 @@ const RfidScreen: React.FC = () => {
               onClick={handleBack}
               className="bg-hospital-teal hover:bg-hospital-teal/90 text-white text-xl px-10 py-6"
             >
-              {t("common.back")}
+              Back
             </Button>
           </div>
         )}

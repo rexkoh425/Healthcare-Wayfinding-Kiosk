@@ -1,10 +1,15 @@
-'use client';
+"use client";
 
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslation } from "react-i18next";
 import useWebSocket from "@/lib/useWebSocket";
 import { Hand } from "lucide-react";
 
@@ -17,13 +22,13 @@ interface InstructionRecord {
 }
 
 const instructionsPath =
+  // process.env.NEXT_PUBLIC_INSTRUCTIONS_PATH ?? "/instructions-ah.json";
   process.env.NEXT_PUBLIC_INSTRUCTIONS_PATH ?? "/instructions-nus.json";
 
 const FinalPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { send } = useWebSocket();
-  const { t } = useTranslation();
 
   const dest = searchParams.get("dest");
 
@@ -50,7 +55,7 @@ const FinalPage: React.FC = () => {
         const response = await fetch(instructionsPath, { cache: "no-store" });
         if (!response.ok) {
           throw new Error(
-            `Failed to load instructions: ${response.status} ${instructionsPath}`,
+            `Failed to load instructions: ${response.status} ${instructionsPath}`
           );
         }
 
@@ -62,11 +67,12 @@ const FinalPage: React.FC = () => {
         const normalized = destinationLabel.toLowerCase();
         const instructions = payload.filter(
           (item): item is InstructionRecord =>
-            typeof item?.location === "string" && typeof item?.directions === "string",
+            typeof item?.location === "string" &&
+            typeof item?.directions === "string"
         );
 
         const match = instructions.find(
-          (item) => item.location.trim().toLowerCase() === normalized,
+          (item) => item.location.trim().toLowerCase() === normalized
         );
 
         if (!match) {
@@ -87,12 +93,16 @@ const FinalPage: React.FC = () => {
         setDirections(text);
         send({ type: "subtitle", text });
 
-        const resolvedSrc = filePath.startsWith("/") ? filePath : `/${filePath}`;
+        const resolvedSrc = filePath.startsWith("/")
+          ? filePath
+          : `/${filePath}`;
         setAudioSrc(resolvedSrc);
       } catch (err) {
         console.error("Failed to load instructions", err);
         if (!cancelled) {
-          setError("We could not load the instructions audio. Please ask for assistance.");
+          setError(
+            "We could not load the instructions audio. Please ask for assistance."
+          );
         }
       } finally {
         if (!cancelled) {
@@ -145,13 +155,17 @@ const FinalPage: React.FC = () => {
     audio.onerror = () => {
       console.error("Unable to play instructions audio");
       cleanup();
-      setError("We could not load the instructions audio. Please ask for assistance.");
+      setError(
+        "We could not load the instructions audio. Please ask for assistance."
+      );
     };
 
     audio.play().catch((err) => {
       console.error("Unable to play instructions audio", err);
       cleanup();
-      setError("We could not load the instructions audio. Please ask for assistance.");
+      setError(
+        "We could not load the instructions audio. Please ask for assistance."
+      );
     });
 
     return cleanup;
@@ -189,7 +203,7 @@ const FinalPage: React.FC = () => {
             onClick={navigateHome}
             className="bg-hospital-teal hover:bg-hospital-teal/90 text-white"
           >
-            {t("common.back")}
+            Back
           </Button>
         </Card>
       </div>
@@ -207,7 +221,8 @@ const FinalPage: React.FC = () => {
             Please pay attention to the hologram.
           </h1>
           <p className="text-2xl text-hospital-blue-gray/80">
-            Your directions are on the way{destinationLabel ? ` to ${destinationLabel}` : ""}.
+            Your directions are on the way
+            {destinationLabel ? ` to ${destinationLabel}` : ""}.
           </p>
         </div>
       </Card>
