@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
 import useWebSocket from "@/lib/useWebSocket";
-import { Hand } from "lucide-react";
+import { Hand, RotateCcw } from "lucide-react";
 
 interface InstructionRecord {
   location: string;
@@ -132,55 +132,62 @@ const FinalPage: React.FC = () => {
     router.refresh();
   }, [router, send]);
 
-  useEffect(() => {
+  const stopAudio = useCallback(() => {
+    const current = audioRef.current;
+    if (current) {
+      current.pause();
+      current.src = "";
+      audioRef.current = null;
+    }
+  }, []);
+
+  const startAudio = useCallback(() => {
     if (!audioSrc) {
       return;
     }
 
+    stopAudio();
+
     const audio = new Audio(audioSrc);
     audioRef.current = audio;
 
-    const cleanup = () => {
-      if (audioRef.current === audio) {
-        audioRef.current = null;
-      }
-      audio.pause();
-      audio.src = "";
+    const handlePlaybackFailure = (err?: unknown) => {
+      console.error("Unable to play instructions audio", err);
+      stopAudio();
+      setError(
+        "We could not load the instructions audio. Please ask for assistance."
+      );
     };
 
     audio.onended = () => {
-      cleanup();
+      stopAudio();
       navigateHome();
     };
-    audio.onerror = () => {
-      console.error("Unable to play instructions audio");
-      cleanup();
-      setError(
-        "We could not load the instructions audio. Please ask for assistance."
-      );
+    audio.onerror = (event) => {
+      handlePlaybackFailure(event);
     };
 
     audio.play().catch((err) => {
-      console.error("Unable to play instructions audio", err);
-      cleanup();
-      setError(
-        "We could not load the instructions audio. Please ask for assistance."
-      );
+      handlePlaybackFailure(err);
     });
-
-    return cleanup;
-  }, [audioSrc, navigateHome]);
+  }, [audioSrc, navigateHome, stopAudio]);
 
   useEffect(() => {
-    return () => {
-      const current = audioRef.current;
-      if (current) {
-        current.pause();
-        current.src = "";
-        audioRef.current = null;
-      }
-    };
-  }, []);
+    if (!audioSrc) {
+      return undefined;
+    }
+
+    startAudio();
+    return stopAudio;
+  }, [audioSrc, startAudio, stopAudio]);
+
+  useEffect(() => {
+    return stopAudio;
+  }, [stopAudio]);
+
+  const handleReplay = useCallback(() => {
+    startAudio();
+  }, [startAudio]);
 
   if (loading) {
     return (
@@ -224,6 +231,15 @@ const FinalPage: React.FC = () => {
             Your directions are on the way
             {destinationLabel ? ` to ${destinationLabel}` : ""}.
           </p>
+          <Button
+            onClick={handleReplay}
+            variant="outline"
+            disabled={!audioSrc}
+            className="text-xl px-8 py-6 flex items-center gap-2"
+          >
+            <RotateCcw className="h-6 w-6" />
+            Replay directions audio
+          </Button>
         </div>
       </Card>
     </div>

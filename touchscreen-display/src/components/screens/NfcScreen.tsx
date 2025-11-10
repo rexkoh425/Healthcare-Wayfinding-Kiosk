@@ -62,6 +62,12 @@ const NfcScreen: React.FC = () => {
 
   const handleBack = () => {
     send({ type: "action", action: "idle" });
+
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+
     router.replace("/");
   };
 
