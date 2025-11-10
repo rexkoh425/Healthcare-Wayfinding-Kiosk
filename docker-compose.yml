@@ -153,10 +153,10 @@ services:
     image: caddy:2-alpine
     container_name: eic-caddy
     depends_on:
-      - server
-      - alexandra-backend
-      - ocr
-      - chatbot-backend
+      # - server
+      # - alexandra-backend
+      # - ocr
+      # - chatbot-backend
       - touchscreen-display
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro

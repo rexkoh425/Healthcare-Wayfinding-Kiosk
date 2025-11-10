@@ -1,7 +1,7 @@
 ﻿import React from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Mic, ScanText, SmartphoneNfc } from "lucide-react";
+import { Mic, ScanText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import useWebSocket from "@/lib/useWebSocket";
 
@@ -16,11 +16,6 @@ const HomeScreen: React.FC = () => {
   const handleTalk = () => {
     send({ type: "action", action: "talk" });
     router.push("/chat");
-  };
-
-  const handleNfc = () => {
-    send({ type: "action", action: "idle" });
-    router.push("/nfc");
   };
 
   return (
@@ -54,16 +49,6 @@ const HomeScreen: React.FC = () => {
           >
             <ScanText className="mr-2 h-8 w-8" />
             Scan your registration slip
-          </Button>
-
-          {/* NFC Button */}
-          <Button
-            onClick={handleNfc}
-            size="lg"
-            className="bg-hospital-teal hover:bg-hospital-teal/90 text-white py-8 text-3xl kiosk-button"
-          >
-            <SmartphoneNfc className="mr-2 h-8 w-8" />
-            Use NFC card
           </Button>
         </div>
       </Card>
