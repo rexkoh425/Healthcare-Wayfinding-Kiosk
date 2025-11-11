@@ -21,9 +21,69 @@ interface InstructionRecord {
   file_path?: string;
 }
 
-const instructionsPath =
-  // process.env.NEXT_PUBLIC_INSTRUCTIONS_PATH ?? "/instructions-ah.json";
-  process.env.NEXT_PUBLIC_INSTRUCTIONS_PATH ?? "/instructions-nus.json";
+const DEFAULT_INSTRUCTION_PATHS: readonly string[] = [
+  "/instructions-nus.json",
+  "/instructions-ah.json",
+];
+
+function normalizeInstructionFilePath(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+function resolveInstructionPaths(): string[] {
+  const env = process.env.NEXT_PUBLIC_INSTRUCTIONS_PATH;
+  if (!env) {
+    return [...DEFAULT_INSTRUCTION_PATHS];
+  }
+
+  const normalized = env
+    .split(",")
+    .map((entry) => normalizeInstructionFilePath(entry))
+    .filter((entry): entry is string => Boolean(entry));
+
+  if (normalized.length === 0) {
+    return [...DEFAULT_INSTRUCTION_PATHS];
+  }
+
+  return normalized;
+}
+
+const instructionPaths = resolveInstructionPaths();
+
+async function loadInstructionMatch(
+  path: string,
+  normalizedDestination: string
+): Promise<InstructionRecord | null> {
+  const response = await fetch(path, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to load instructions: ${response.status} ${path}`
+    );
+  }
+
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) {
+    throw new Error(`Invalid instructions payload from ${path}`);
+  }
+
+  const instructions = payload.filter(
+    (item): item is InstructionRecord =>
+      typeof item?.location === "string" && typeof item?.directions === "string"
+  );
+
+  return (
+    instructions.find(
+      (item) => item.location.trim().toLowerCase() === normalizedDestination
+    ) ?? null
+  );
+}
 
 const FinalPage: React.FC = () => {
   const router = useRouter();
@@ -52,51 +112,54 @@ const FinalPage: React.FC = () => {
       }
 
       try {
-        const response = await fetch(instructionsPath, { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error(
-            `Failed to load instructions: ${response.status} ${instructionsPath}`
-          );
+        const normalizedDestination = destinationLabel.toLowerCase();
+        let lastFailure: Error | null = null;
+
+        for (const path of instructionPaths) {
+          try {
+            const match = await loadInstructionMatch(
+              path,
+              normalizedDestination
+            );
+            if (!match) {
+              continue;
+            }
+
+            const text = match.directions.trim();
+            const filePath =
+              typeof match.file_path === "string" ? match.file_path.trim() : "";
+            if (!filePath) {
+              throw new Error(
+                `Missing audio file path for destination in ${path}.`
+              );
+            }
+
+            if (cancelled) {
+              return;
+            }
+
+            setDirections(text);
+            send({ type: "subtitle", text });
+
+            const resolvedSrc = filePath.startsWith("/")
+              ? filePath
+              : `/${filePath}`;
+            setAudioSrc(resolvedSrc);
+            return;
+          } catch (pathError) {
+            console.error(`Failed to load instructions from ${path}`, pathError);
+            lastFailure =
+              pathError instanceof Error
+                ? pathError
+                : new Error(String(pathError));
+          }
         }
 
-        const payload: unknown = await response.json();
-        if (!Array.isArray(payload)) {
-          throw new Error("Invalid instructions payload");
+        if (lastFailure) {
+          throw lastFailure;
         }
 
-        const normalized = destinationLabel.toLowerCase();
-        const instructions = payload.filter(
-          (item): item is InstructionRecord =>
-            typeof item?.location === "string" &&
-            typeof item?.directions === "string"
-        );
-
-        const match = instructions.find(
-          (item) => item.location.trim().toLowerCase() === normalized
-        );
-
-        if (!match) {
-          throw new Error("Destination not found in instructions.");
-        }
-
-        const text = match.directions.trim();
-        const filePath =
-          typeof match.file_path === "string" ? match.file_path.trim() : "";
-        if (!filePath) {
-          throw new Error("Missing audio file path for destination.");
-        }
-
-        if (cancelled) {
-          return;
-        }
-
-        setDirections(text);
-        send({ type: "subtitle", text });
-
-        const resolvedSrc = filePath.startsWith("/")
-          ? filePath
-          : `/${filePath}`;
-        setAudioSrc(resolvedSrc);
+        throw new Error("Destination not found in available instructions.");
       } catch (err) {
         console.error("Failed to load instructions", err);
         if (!cancelled) {
