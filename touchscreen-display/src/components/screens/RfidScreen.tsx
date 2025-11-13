@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SchoolIcon, type SchoolIconType } from "@/components/ui/SchoolIcons";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
 import useWebSocket from "@/lib/useWebSocket";
 
 function resolveBackendBase(): string {
@@ -57,6 +56,7 @@ function isSchoolIconType(
 
 const RfidScreen: React.FC = () => {
   const router = useRouter();
+  const { send } = useWebSocket();
   const searchParams = useSearchParams();
   const { send } = useWebSocket();
 
@@ -65,15 +65,26 @@ const RfidScreen: React.FC = () => {
   const iconParam = searchParams.get("icon");
   const unitParam = searchParams.get("unitNumber") ?? searchParams.get("unit");
 
-  const iconType = useMemo(() => {
-    const trimmed = iconParam?.trim();
-    return isSchoolIconType(trimmed) ? (trimmed as SchoolIconType) : null;
-  }, [iconParam]);
-
-  const unitLabel = useMemo(() => unitParam?.trim() ?? "", [unitParam]);
-
-  const [dispensing, setDispensing] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Fetch destination info (icon, unit number)
+  useEffect(() => {
+    if (!dest) return;
+    const fetchDestinationInfo = async () => {
+      try {
+        const res = await fetch(
+          `${baseUrl}/destinations/?name=${encodeURIComponent(dest)}`
+        );
+        if (!res.ok) throw new Error("Failed to fetch destination info");
+        const data: { icon?: string; unitNumber?: string } = await res.json();
+        setIcon(data.icon || null);
+        setUnitNumber(data.unitNumber || null);
+      } catch (err) {
+        console.warn("Could not fetch destination info", err);
+        setIcon(null);
+        setUnitNumber(null);
+      }
+    };
+    fetchDestinationInfo();
+  }, [dest, baseUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +96,16 @@ const RfidScreen: React.FC = () => {
         return;
       }
 
+    const isInstructionRecord = (item: unknown): item is InstructionRecord => {
+      if (typeof item !== "object" || item === null) return false;
+      const rec = item as Record<string, unknown>;
+      return (
+        typeof rec.location === "string" && typeof rec.directions === "string"
+      );
+    };
+
+    const fetchAndSpeak = async () => {
+      send({ type: "action", action: "hear" });
       try {
         const rfidBase = resolveRfidReaderUrl();
         if (!rfidBase) {
@@ -98,11 +119,18 @@ const RfidScreen: React.FC = () => {
           throw new Error(`RFID reader error: ${rfidResponse.status}`);
         }
 
-        const tagPayload = await rfidResponse.json();
-        const tagId =
-          typeof tagPayload?.epc === "string" ? tagPayload.epc.trim() : "";
-        if (!tagId) {
-          throw new Error("RFID tag ID missing in response.");
+        const instructions = payload.filter(isInstructionRecord);
+
+        const normalized = dest.trim().toLowerCase();
+        const match = instructions.find(
+          (item) =>
+            item.location.trim().toLowerCase() === normalized &&
+            item.directions.trim().length > 0
+        );
+
+        if (!match) {
+          console.warn("No matching instructions found for destination:", dest);
+          return;
         }
 
         const backendBase = resolveBackendBase();
@@ -167,9 +195,73 @@ const RfidScreen: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [destinationLabel, router]);
+  }, [dest, send]);
 
-  const handleBack = () => {
+  useEffect(() => {
+    async function handleTags() {
+      try {
+        // 1️⃣ GET request
+        const rfidUrl = resolveRfidReaderUrl();
+        if (!rfidUrl) throw new Error("RFID reader URL is not configured.");
+        console.log("Requesting RFID reader at:", rfidUrl);
+        const espRes = await fetch(rfidUrl);
+        if (!espRes.ok)
+          throw new Error(`HTTP error from rfid! status: ${espRes.status}`);
+
+        const tagData = await espRes.json();
+        console.log("Received from RFID Reader:", tagData);
+
+        // 2️⃣ POST request to user/backend
+        const usersUrl = `${baseUrl}/users/`;
+        console.log("Posting to Users", usersUrl);
+        const postRes = await fetch(usersUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            rfidTagId: tagData.epc,
+            destination: dest,
+          }),
+        });
+
+        if (postRes.ok) {
+          const postResult = await postRes.json();
+          console.log("POST result:", postResult);
+          setDispensing(false);
+        } else if (postRes.status == 409) {
+          setDispensing(false);
+        } else {
+          throw new Error(
+            `HTTP error from users api! status: ${postRes.status}`
+          );
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    handleTags();
+  }, [baseUrl, dest]);
+
+  // useEffect(() => {
+  //   // Only start the timer when the collection screen is visible (`dispensing` is false)
+  //   if (!dispensing) {
+  //     const inactivityTimer = setTimeout(() => {
+  //       console.log("Timeout: User collect sticker. Navigating home.");
+  //       // Navigate back to the main page after 15 seconds
+  //       send({ type: "action", action: "idle" });
+  //       router.push("/");
+  //     }, 15000); // 15000 milliseconds = 15 seconds
+
+  //     //Cleanup function to clear timer
+  //     return () => {
+  //       clearTimeout(inactivityTimer);
+  //     };
+  //   }
+  // }, [dispensing, router]);
+
+  const handleCollected = () => {
+    // send action to server (touchscreen -> hologram)
     try {
       send({ type: "action", action: "idle" });
     } catch (err) {
