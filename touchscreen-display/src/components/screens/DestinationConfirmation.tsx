@@ -145,8 +145,8 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh] animate-fade-in">
-      <Card className="w-full max-w-4xl p-8 text-center kiosk-card">
+    <div className="flex flex-col items-center justify-center min-h-[85vh] animate-fade-in">
+      <Card className="w-full max-w-3xl p-8 text-center kiosk-card">
         {/* Header Section */}
         <div className="mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-hospital-teal/10 mb-4">
@@ -159,7 +159,7 @@ const DestinationConfirmation: React.FC<DestinationConfirmationProps> = ({
           <h1 className="text-4xl font-bold text-hospital-blue-gray mb-3">
             Confirm Your Destination
           </h1>
-          <p className="text-2xl text-hospital-blue-gray/70">
+          <p className="text-lg text-hospital-blue-gray/70">
             Please select your destination below
           </p>
         </div>

@@ -192,52 +192,6 @@ docker run --rm \
     rfidimage
 ```
 
-# USB Mode 
-```bash
-cd rfid
-sudo apt update
-python3 -m venv .venv --system-site-packages
-source .venv/bin/activate
-pip install -r requirements.txt
-sudo .venv/bin/python rfid-serial.py
-```
-
-Find RFID Reader port 
-```bash
-ls /dev/ttyACM*  #ls /dev/ttyUSB* if it doesnt work 
-python3 -m serial.tools.miniterm /dev/ttyACM0 9600 #can use this to test if the reader is sending values to this port 
-```
-
-## NFC 
-Setup
-1. Enable UART on Rpi
-```bash
-sudo raspi-config
-```
-- “Would you like a login shell to be accessible over serial?” → No
-- “Would you like the serial port hardware to be enabled?” → Yes
-```bash
-sudo reboot
-```
-then do 
-```bash
-sudo nano /boot/firmware/config.txt
-#add the lines below under [all]
-enable_uart=1
-dtoverlay=disable-bt
-#after write then 
-sudo reboot
-```
-
-```bash
-cd nfc
-python3 -m venv .venv --system-site-packages
-source .venv/bin/activate
-pip install -r requirements.txt
-sudo .venv/bin/python nfc.py
-```
-
-
 ## Clearing Space in Rpi
 
 ```bash
