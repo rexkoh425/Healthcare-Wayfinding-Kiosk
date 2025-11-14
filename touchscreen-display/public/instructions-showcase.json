@@ -1,0 +1,16 @@
+[
+  {
+    "location": "Toilet",
+    "code": "",
+    "level": "1",
+    "directions": "Turn left. Head to the lift lobby and you will see the toilet. The signboards along the way will guide you. We hope you find your way smoothly!",
+    "file_path": "audio/instructions/"
+  },
+  {
+    "location": "Snacks",
+    "code": "",
+    "level": "1",
+    "directions": "Turn right. When you see the university rover booth, walk past the registration booth and turn right. You will see the snack booth diagonally in front of you. The signboards along the way will guide you. We hope you find your way smoothly!",
+    "file_path": "audio/instructions/"
+  }
+]

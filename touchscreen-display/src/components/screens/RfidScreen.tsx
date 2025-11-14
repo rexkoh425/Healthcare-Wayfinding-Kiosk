@@ -199,7 +199,7 @@ const RfidScreen: React.FC = () => {
               {(destinationLabel || iconType || unitLabel) && (
                 <div className="inline-flex items-center px-8 py-4 bg-hospital-blue/10 rounded-xl gap-8">
                   <p className="text-4xl font-semibold text-hospital-teal">
-                    {destinationLabel || "Loading..."}
+                    {destinationLabel || "Loading destination..."}
                   </p>
                   {(iconType || unitLabel) && (
                     <div className="flex flex-col items-center justify-center text-hospital-blue-gray">
