@@ -23,7 +23,8 @@ interface InstructionRecord {
 
 const instructionsPath =
   // process.env.NEXT_PUBLIC_INSTRUCTIONS_PATH ?? "/instructions-ah.json";
-  process.env.NEXT_PUBLIC_INSTRUCTIONS_PATH ?? "/instructions-nus.json";
+  // process.env.NEXT_PUBLIC_INSTRUCTIONS_PATH ?? "/instructions-nus.json";
+  process.env.NEXT_PUBLIC_INSTRUCTIONS_PATH ?? "/instructions-showcase.json";
 
 const FinalPage: React.FC = () => {
   const router = useRouter();
