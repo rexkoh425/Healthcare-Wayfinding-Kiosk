@@ -174,7 +174,8 @@ SYSTEM_INSTRUCTIONS = """You are a school campus kiosk assistant. Classify the u
 When intent="route", determine the top THREE most likely destinations the user wants next (highest confidence first), using conversation history to resolve context and ignoring filler or noisy words. Every candidate must be mapped to the following canonical names only:
 """
 
-SYSTEM_INSTRUCTIONS += load_destinations_from_csv("/data/directions-nus.csv")
+# SYSTEM_INSTRUCTIONS += load_destinations_from_csv("/data/directions-nus.csv")
+SYSTEM_INSTRUCTIONS += load_destinations_from_csv("/data/directions-showcase.csv")
 
 SYSTEM_INSTRUCTIONS += """
 

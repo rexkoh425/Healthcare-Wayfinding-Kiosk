@@ -3,7 +3,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { SchoolIcon, type SchoolIconType } from "@/components/ui/SchoolIcons";
+import {
+  ShowcaseIcon,
+  type ShowcaseIconType,
+} from "@/components/ui/ShowcaseIcons";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import useWebSocket from "@/lib/useWebSocket";
@@ -36,23 +39,19 @@ function resolveRfidReaderUrl(): string {
   return "";
 }
 
-const SCHOOL_ICON_TYPES: readonly SchoolIconType[] = [
-  "lecture",
-  "bakery",
-  "convenience-store",
-  "lab",
-  "classroom",
-  "workshop",
-  "building",
+const SHOWCASE_ICON_TYPES: readonly ShowcaseIconType[] = [
+  "route",
+  "toilet",
+  "food",
 ];
 
-function isSchoolIconType(
+function isShowcaseIconType(
   value: string | undefined | null
-): value is SchoolIconType {
+): value is ShowcaseIconType {
   if (!value) {
     return false;
   }
-  return (SCHOOL_ICON_TYPES as readonly string[]).includes(value.trim());
+  return (SHOWCASE_ICON_TYPES as readonly string[]).includes(value.trim());
 }
 
 const RfidScreen: React.FC = () => {
@@ -67,7 +66,7 @@ const RfidScreen: React.FC = () => {
 
   const iconType = useMemo(() => {
     const trimmed = iconParam?.trim();
-    return isSchoolIconType(trimmed) ? (trimmed as SchoolIconType) : null;
+    return isShowcaseIconType(trimmed) ? (trimmed as ShowcaseIconType) : null;
   }, [iconParam]);
 
   const unitLabel = useMemo(() => unitParam?.trim() ?? "", [unitParam]);
@@ -199,12 +198,12 @@ const RfidScreen: React.FC = () => {
               {(destinationLabel || iconType || unitLabel) && (
                 <div className="inline-flex items-center px-8 py-4 bg-hospital-blue/10 rounded-xl gap-8">
                   <p className="text-4xl font-semibold text-hospital-teal">
-                    {destinationLabel || "Loading..."}
+                    {destinationLabel || "Loading destination..."}
                   </p>
                   {(iconType || unitLabel) && (
                     <div className="flex flex-col items-center justify-center text-hospital-blue-gray">
                       {iconType && (
-                        <SchoolIcon
+                        <ShowcaseIcon
                           type={iconType}
                           className="w-16 h-16 mb-2 text-hospital-teal"
                         />
