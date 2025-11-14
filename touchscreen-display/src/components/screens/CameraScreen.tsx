@@ -160,10 +160,6 @@ const CameraScreen: React.FC = () => {
               aria-label="Instructional video showing how to scan registration slip"
             />
           </div>
-          <p className="text-hospital-blue-gray/70 text-xl max-w-xl mx-auto">
-            Position your registration slip within the frame
-          </p>
-        </div>
 
           {/* Camera Stream */}
           <div className="border rounded-lg overflow-hidden shadow flex justify-center items-center bg-black relative aspect-video w-full max-w-4xl">
@@ -189,7 +185,7 @@ const CameraScreen: React.FC = () => {
             onClick={handleScan}
             size="lg"
             disabled={loading}
-            className={`relative bg-hospital-teal text-white py-6 text-lg kiosk-button ${
+            className={`w-full bg-hospital-teal text-white py-8 text-3xl kiosk-button ${
               loading
                 ? "cursor-not-allowed opacity-80"
                 : "hover:bg-hospital-teal/90"
@@ -199,7 +195,7 @@ const CameraScreen: React.FC = () => {
               <Spinner size={28} />
             ) : (
               <>
-                <Search className="mr-2 h-5 w-5" />
+                <Search className="mr-2 h-8 w-8" />
                 Scan Registration Slip
               </>
             )}
