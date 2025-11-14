@@ -141,6 +141,7 @@ services:
       - ./chatbot/app/voices:/voices:ro
       - ./data/directions-nus.csv:/data/directions-nus.csv:ro
       - ./data/directions-ah.csv:/data/directions-ah.csv:ro
+      - ./data/directions-showcase.csv:/data/directions-showcase.csv:ro
     command: >
       uvicorn app.dialog:app
       --host 0.0.0.0
