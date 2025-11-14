@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-// import { SchoolIcon, type SchoolIconType } from "@/components/ui/SchoolIcons";
 import {
   ShowcaseIcon,
   type ShowcaseIconType,
@@ -40,25 +39,6 @@ function resolveRfidReaderUrl(): string {
   return "";
 }
 
-// const SCHOOL_ICON_TYPES: readonly SchoolIconType[] = [
-//   "lecture",
-//   "bakery",
-//   "convenience-store",
-//   "lab",
-//   "classroom",
-//   "workshop",
-//   "building",
-// ];
-
-// function isSchoolIconType(
-//   value: string | undefined | null
-// ): value is SchoolIconType {
-//   if (!value) {
-//     return false;
-//   }
-//   return (SCHOOL_ICON_TYPES as readonly string[]).includes(value.trim());
-// }
-
 const SHOWCASE_ICON_TYPES: readonly ShowcaseIconType[] = [
   "route",
   "toilet",
@@ -83,11 +63,6 @@ const RfidScreen: React.FC = () => {
   const destinationLabel = useMemo(() => dest?.trim() ?? "", [dest]);
   const iconParam = searchParams.get("icon");
   const unitParam = searchParams.get("unitNumber") ?? searchParams.get("unit");
-
-  // const iconType = useMemo(() => {
-  //   const trimmed = iconParam?.trim();
-  //   return isSchoolIconType(trimmed) ? (trimmed as SchoolIconType) : null;
-  // }, [iconParam]);
 
   const iconType = useMemo(() => {
     const trimmed = iconParam?.trim();
