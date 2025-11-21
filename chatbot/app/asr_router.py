@@ -28,6 +28,7 @@ class AsrOut(BaseModel):
 # Set this in your Pi/container env to offload:
 #   WHISPER_REMOTE_BASE=http://<DESKTOP-IP>:8000
 _REMOTE_BASE = (getattr(settings, "WHISPER_REMOTE_BASE", None) or os.getenv("WHISPER_REMOTE_BASE") or "").rstrip("/")
+_MODE = (getattr(settings, "WHISPER_MODE", "auto") or "auto").lower()  # auto | remote | local
 
 
 async def _remote_transcribe_bytes(
@@ -140,6 +141,15 @@ async def transcribe_audio_bytes(
     language: Optional[str] = None,
 ) -> AsrOut:
     """Remote-first transcription; falls back to local if not configured."""
+    # Explicit modes:
+    if _MODE == "remote":
+        if not _REMOTE_BASE:
+            raise HTTPException(status_code=500, detail="WHISPER_REMOTE_BASE not set but WHISPER_MODE=remote")
+        return await _remote_transcribe_bytes(data, filename_suffix=suffix, language=language)
+    if _MODE == "local":
+        return await _local_transcribe_bytes(data, suffix=suffix, language=language)
+
+    # auto (default): remote if configured, otherwise local
     if _REMOTE_BASE:
         return await _remote_transcribe_bytes(data, filename_suffix=suffix, language=language)
     return await _local_transcribe_bytes(data, suffix=suffix, language=language)

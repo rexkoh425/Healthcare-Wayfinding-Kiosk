@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     WHISPER_DEVICE: str = "cpu"            # "cpu" | "cuda" | "auto"
     WHISPER_PRECISION: str = "int8"        # "int8" | "float16" | "float32"
     WHISPER_LANGUAGE: Optional[str] = None
+    # Remote/offload control
+    WHISPER_MODE: str = "auto"             # "auto" | "remote" | "local"
+    WHISPER_REMOTE_BASE: Optional[str] = None  # e.g., http://gpu-host:8000
 
     # Back-compat env names (will be mapped to the canonical ones if provided)
     WHISPER_MODEL: Optional[str] = None    # legacy alias for WHISPER_MODEL_NAME
@@ -44,6 +47,12 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "gemini"
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"  # modern default; works with google-genai
+
+    # ---------------- Vector store (Chroma) ----------------
+    CHROMA_DIR: str = ".chroma/ah"
+    CHROMA_COLLECTION: str = "alexandra_hospital"
+    CHROMA_EMBED_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    CHROMA_TOP_K: int = 4
 
     # ---------------- TTS (Piper) ----------------
     PIPER_VOICE: str = "en_US-amy-medium"

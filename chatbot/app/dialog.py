@@ -22,6 +22,7 @@ from .tts_router import router as tts_router, synthesize_wav
 import csv
 
 
+
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.INFO)
 
@@ -66,9 +67,24 @@ def load_destinations_from_csv(csv_file):
     Load destinations from CSV file and format as Python list string.
     CSV should have destinations in one column or comma-separated.
     """
+    path = Path(csv_file)
+    if not path.exists():
+        root = Path(__file__).resolve().parent.parent
+        # Try relative to project root and data/ subfolder
+        candidates = [
+            root / path.name,
+            root / "data" / path.name,
+            root / path,
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                path = candidate
+                break
+    if not path.exists():
+        raise FileNotFoundError(f"destinations CSV not found: {csv_file}")
+
     destinations = []
-    
-    with open(csv_file, 'r') as file:
+    with path.open("r", encoding="utf-8") as file:
         reader = csv.reader(file)
         next(reader)  # Skip header row
         for row in reader:
@@ -96,7 +112,8 @@ def _format_locations_for_prompt(locations: List[str]) -> str:
 
 
 def _build_tts_response_text(llm_out: LlmOut) -> str:
-    if llm_out.locations:
+    # For route intent, confirm destination; otherwise speak the LLM response directly.
+    if (llm_out.intent or "").lower() == "route" and llm_out.locations:
         location_phrase = _format_locations_for_prompt(llm_out.locations)
         if location_phrase:
             return f"Can I confirm you want to go to {location_phrase}?"
@@ -139,6 +156,64 @@ def _get_gemini_client() -> "genai.Client":
 def _gemini_model():
     return _get_gemini_client()
 
+# ---------- Chroma (vector store) ----------
+_CHROMA_COLLECTION = None
+_CHROMA_DISABLED = False
+
+
+def _get_chroma_collection():
+    """Lazy-load Chroma collection; return None if unavailable."""
+    global _CHROMA_COLLECTION, _CHROMA_DISABLED
+    if _CHROMA_COLLECTION is not None:
+        return _CHROMA_COLLECTION
+    if _CHROMA_DISABLED:
+        return None
+    try:
+        import chromadb
+        from chromadb.utils import embedding_functions
+    except ModuleNotFoundError:
+        logger.warning("Chroma not installed; retrieval disabled")
+        _CHROMA_DISABLED = True
+        return None
+    try:
+        client = chromadb.PersistentClient(path=settings.CHROMA_DIR)
+        embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=settings.CHROMA_EMBED_MODEL
+        )
+        _CHROMA_COLLECTION = client.get_collection(
+            name=settings.CHROMA_COLLECTION,
+            embedding_function=embed_fn,
+        )
+        logger.info("Chroma collection loaded name=%s dir=%s", settings.CHROMA_COLLECTION, settings.CHROMA_DIR)
+    except Exception:
+        logger.exception("Failed to initialise Chroma collection; retrieval disabled")
+        _CHROMA_DISABLED = True
+        _CHROMA_COLLECTION = None
+    return _CHROMA_COLLECTION
+
+
+def _retrieve_context(query: str, limit: int) -> List[str]:
+    """Semantic search top-k snippets from Chroma; returns formatted strings."""
+    coll = _get_chroma_collection()
+    if not coll:
+        return []
+    try:
+        res = coll.query(query_texts=[query], n_results=limit)
+    except Exception:
+        logger.exception("Chroma query failed")
+        return []
+    docs = (res.get("documents") or [[]])[0] if res else []
+    metas = (res.get("metadatas") or [[]])[0] if res else []
+    items: List[str] = []
+    for doc, meta in zip(docs, metas):
+        snippet = (doc or "")[:800]
+        section = ""
+        if isinstance(meta, dict):
+            section = meta.get("section") or meta.get("doc_type") or meta.get("entity") or ""
+        prefix = f"[{section}] " if section else ""
+        items.append(prefix + snippet)
+    return items
+
 
 # ---------- Prompt ----------
 # SYSTEM_INSTRUCTIONS = """You are a hospital kiosk assistant. Classify the user's input into one of exactly four intents:
@@ -165,21 +240,26 @@ def _gemini_model():
 #   "repeat_request": true|false
 # }"""
 
-SYSTEM_INSTRUCTIONS = """You are a school campus kiosk assistant. Classify the user's input into one of exactly four intents:
-1) "route" for route directions requests
-2) "general" for general enquiries (opening hours, where is library?, etc.)
+SYSTEM_INSTRUCTIONS = """You are a hospital kiosk assistant for Alexandra Hospital (Singapore). Use the provided CONTEXT (retrieved facts) to answer concisely and safely.
+Classify the user's input into exactly four intents:
+1) "route" for route/directions requests
+2) "general" for general enquiries (visiting hours, clinics, contact info, policies, payments, shuttle, etc.)
 3) "repeat" if they ask to repeat instructions
 4) "nonsense" if the input is not meaningful for this context
 
-When intent="route", determine the top THREE most likely destinations the user wants next (highest confidence first), using conversation history to resolve context and ignoring filler or noisy words. Every candidate must be mapped to the following canonical names only:
+When intent="route", determine the top THREE most likely destinations the user wants next (highest confidence first), using conversation history to resolve context and ignoring filler/noise. Every candidate must be mapped to the following canonical names only:
 """
 
-# SYSTEM_INSTRUCTIONS += load_destinations_from_csv("/data/directions-nus.csv")
-SYSTEM_INSTRUCTIONS += load_destinations_from_csv("/data/directions-showcase.csv")
+SYSTEM_INSTRUCTIONS += load_destinations_from_csv("/data/directions-ah.csv")
 
 SYSTEM_INSTRUCTIONS += """
 
-Remove duplicates. If you truly cannot decide, set ask_clarification=true and craft a clarifying response.
+Rules:
+- Base response_text ONLY on the CONTEXT provided. Do not invent facts.
+- If the query is a GENERAL FAQ (e.g., visiting hours, payments/billing, contacts, shuttle, clinic info, policies, services), set intent=\"general\", set locations=[], and answer directly (no destination confirmation).
+- If the query is ROUTE-related, set intent=\"route\" and return up to three canonical destinations (from the provided list), highest confidence first. Remove duplicates. If unsure, set ask_clarification=true.
+- Keep response_text short (1-2 sentences). If context is insufficient, say you don't have that info and ask for clarification.
+
 Return STRICT JSON only:
 {
   "intent": "route|general|repeat|nonsense",
@@ -199,11 +279,17 @@ def _format_history(history: Optional[List[Msg]]) -> str:
     return "\n".join(parts)
 
 
-def _build_user_message(user_text: str, history: Optional[List[Msg]]) -> str:
-    context = _format_history(history)
-    if context:
-        return f"PREVIOUS:\n{context}\n\nUSER_INPUT:\n{user_text}\n\nReturn STRICT JSON only. No markdown."
-    return f"USER_INPUT:\n{user_text}\n\nReturn STRICT JSON only. No markdown."
+def _build_user_message(user_text: str, history: Optional[List[Msg]], context_docs: Optional[List[str]]) -> str:
+    parts: List[str] = []
+    if context_docs:
+        ctx_lines = [f"{i+1}. {doc}" for i, doc in enumerate(context_docs)]
+        parts.append("CONTEXT (top matches):\n" + "\n".join(ctx_lines))
+    history_block = _format_history(history)
+    if history_block:
+        parts.append(f"PREVIOUS:\n{history_block}")
+    parts.append(f"USER_INPUT:\n{user_text}")
+    parts.append("Return STRICT JSON only. No markdown.")
+    return "\n\n".join(parts)
 
 
 def _coerce_json(s: str) -> Dict[str, Any]:
@@ -218,7 +304,8 @@ def _coerce_json(s: str) -> Dict[str, Any]:
 
 def _invoke_llm(user_text: str, history: Optional[List[Msg]]) -> TalkOut:
     client = _get_gemini_client()
-    prompt = SYSTEM_INSTRUCTIONS + "\n\n" + _build_user_message(user_text, history)
+    context_docs = _retrieve_context(user_text, limit=settings.CHROMA_TOP_K)
+    prompt = SYSTEM_INSTRUCTIONS + "\n\n" + _build_user_message(user_text, history, context_docs)
 
     logger.info("Invoking Gemini; prompt preview=%s", prompt[:200].replace("\n", "\\n"))
 

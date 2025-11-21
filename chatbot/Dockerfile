@@ -1,12 +1,15 @@
-FROM python:3.11-slim
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# System deps
+# System deps (python, ffmpeg, curl, certs)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg curl ca-certificates libstdc++6 \
+      python3 python3-pip ffmpeg curl ca-certificates libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
+
+# Ensure python/pip commands exist
+RUN ln -sf /usr/bin/python3 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # Correct Piper TTS binary (arm64 on Pi, else x86_64)
 RUN set -eux; \
@@ -26,9 +29,7 @@ COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --upgrade pip && \
     pip install --no-cache-dir -r /app/requirements.txt
 
-
 COPY . /app
-
 
 EXPOSE 8001
 CMD ["uvicorn", "app.dialog:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -136,9 +136,13 @@ services:
     environment:
       PIPER_VOICE: en_US-amy-low
       PIPER_VOICE_PATH: /voices/en_US-amy-low.onnx
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
     volumes:
       - ./certs:/certs:ro
       - ./chatbot/app/voices:/voices:ro
+      - ./data:/data:ro
+      - ./.chroma:/app/.chroma
       - ./data/directions-nus.csv:/data/directions-nus.csv:ro
       - ./data/directions-ah.csv:/data/directions-ah.csv:ro
       - ./data/directions-showcase.csv:/data/directions-showcase.csv:ro
@@ -149,6 +153,14 @@ services:
     expose:
       - "8001"
     restart: unless-stopped
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   caddy:
     image: caddy:2-alpine
@@ -165,7 +177,6 @@ services:
     ports:
       - "3000:3000"
       - "8080:8080"
-      - "8000:8000"
       - "8001:8001"
       - "9000:9000"
     restart: unless-stopped
