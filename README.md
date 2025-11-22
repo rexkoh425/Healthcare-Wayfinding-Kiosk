@@ -26,7 +26,7 @@ Find My Way helps patients—especially seniors—navigate hospital environments
 - Software Architecture — Kiosk  
   ![Kiosk Software Architecture](docs/images/kiosk_architecture.png)
 
-## 📸 Screens & Devices (add your own captures)
+## 📸 Screens & Devices
 - 🏗️ Registration Kiosk  
   ![Registration Kiosk](docs/images/kiosk.png)
 - 🕶️ Hologram Avatar  
