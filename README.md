@@ -1,200 +1,65 @@
-# Wayfinding Kiosk
+# 📍 Find My Way — Intelligent App-less Indoor Navigation (Alexandra Hospital)
 
-## To run the production build
+> A Smart Solutions Studio (IS303 / CDE3301) project co-designed with Alexandra Hospital (AH), tested with users across AH and NUS. App-less, human-centric indoor navigation with multimodal assistance.
 
+## 🧭 Overview
+Find My Way helps patients—especially seniors—navigate hospital environments without installing any app. The ecosystem combines:
+- OCR-based registration slip reading
+- Multilingual voice-enabled chatbot (Whisper STT, Gemini LLM, Piper TTS)
+- NFC card scanning
+- Automatic RFID sticker dispensing
+- Smart digital signboards with long-range RFID detection
+- Holographic avatar assistance
+
+## ✨ Key Features
+- 🧪 OCR Slip Reader — Detects clinic names/locations from registration slips
+- 🎙️ Voice-Enabled AI Chatbot — Whisper STT + Gemini LLM + Piper TTS
+- 📡 RFID Wayfinding Stickers — Issued automatically to track progress
+- 🧲 Long-Range RFID Smart Signboards — Personalized directional prompts
+- 🖥️ Holographic Avatar — Audio-visual guidance
+- 🛠️ Zero App Required — Elder-friendly design
+- 🏥 Real-World Deployment — Actively tested at AH
+
+## 🏗️ System Architecture
+- Hardware Architecture  
+  ![Hardware Architecture](docs/images/hardware_architecture.png)
+- Software Architecture — Kiosk  
+  ![Kiosk Software Architecture](docs/images/kiosk_architecture.png)
+
+## 📸 Screens & Devices (add your own captures)
+- 🏗️ Registration Kiosk  
+  ![Registration Kiosk](docs/images/kiosk.png)
+- 🕶️ Hologram Avatar  
+  ![Hologram Avatar](docs/images/hologram.png)
+- 🖼️ Smart Digital Signboards  
+  ![Signboard](docs/images/signboard.png)
+- 🧪 OCR Slip Detection  
+  ![OCR Sample](docs/images/ocr_sample.png)
+- 📡 RFID Sticker Dispenser  
+  ![RFID](docs/images/rfid.png)
+
+## 🚀 Technologies
+- **Frontend:** Next.js, TailwindCSS, WebSockets, Tablet UI (Pixel Tablet)
+- **Backend:** FastAPI, MongoDB Atlas, REST + WS, optional remote GPU for Whisper
+- **ML / CV:** YOLOv8-OBB slip detection, OCR preprocessing, Whisper STT, Gemini LLM, Piper TTS
+- **Hardware:** Raspberry Pi 5, PN532 NFC reader, ESP32 UHF RFID (long-range), custom friction-based sticker dispenser
+
+## 🏗️ Repository Structure
 ```
-rm -rf .next node_modules
-npm install
-npm run build
-npm run start
-```
-
-## Setup & Installation
-
-Clone the repository.
-
-```
-git clone https://github.com/CDE3301-IS303/cde3301-wayfinding-kiosk.git
-```
-
-### touchscreen-display
-
-```
-cd touchscreen-display
-npm install
-npm run dev
-```
-
-Open http://localhost:3000/ for the touchscreen display.
-
-OR
-
-```
-node server.js
-```
-
-Open https://localhost:3000/ for the touchscreen display.
-
-### server (WebSocket + FastAPI)
-
-```
-cd server
-npm install
-python3 -m pip install -r backend/requirements.txt  # once per machine
-# optional: create a venv first
-BACKEND_RELOAD=1 npm start
-```
-
-By default `npm start` now launches both the WebSocket bridge on port 8080 and the FastAPI backend on port 8000.
-Set `BACKEND_RELOAD=0` (or `NODE_ENV=production`) to disable the FastAPI auto-reload watcher.
-
-### hologram-display
-
-Serve the static folder over HTTP (browsers often block autoplay or XHR from `file://`).
-
-```
-# from project root
-npx http-server hologram-display -p 3001
-```
-
-Open http://localhost:3001 for the hologram display.
-
-## To run with Docker Compose
-
-```
-docker-compose up --build
+touchscreen-display   # Next.js kiosk UI
+server                # WebSocket + FastAPI bridge
+chatbot               # Gemini + Chroma RAG + Piper TTS
+hologram-display      # Avatar assets
+ocr-service           # OCR pipeline
+rfid / nfc            # Device integrations
+data                  # Vector data & directions CSVs
+.chroma               # Chroma persistence
 ```
 
-To run in detached mode
+## 🧭 Getting Started
+- Run everything via Docker Compose: `docker compose up --build`
+- For per-service setup, env variables, certs, and vector-store rebuild steps: see `instructions.md`.
 
-```
-docker-compose up -d
-```
-
-### Generating local TLS certificates
-
-Most services (Caddy, hologram-display, NFC/RFID) expect to find `/certs/cert.pem` and `/certs/key.pem`.  
-The files are gitignored, so create them once per machine before starting Docker Compose:
-
-```
-docker run --rm -v "${PWD}/certs:/certs" alpine sh -c "apk add --no-cache openssl && openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /certs/key.pem -out /certs/cert.pem -subj '/CN=localhost'"
-```
-
-Re-run the command whenever you want to regenerate a fresh self-signed certificate.
-
-## Tech Stack
-
-- [Next.js](https://nextjs.org/docs). Understand how [routing](https://nextjs.org/docs/app/getting-started/project-structure) works if you're creating a new screen, we're using App Router.
-- [Tailwindcss v3](https://v3.tailwindcss.com/docs/installation). Do note that we're using the older v3, the latest version is v4 so some online documentation will differ a lot.
-- Docker
-
-## WebSocket Server
-
-I placed some placeholder videos in `hologram-display/assets`. This is what each video represents:
-
-- `wave.mp4`: avatar is waving (when the kiosk is IDLE)
-- `listen.mp4`: avatar is listening, standing still (when the user is talking so the avatar stands till to listen)
-- `reply.mp4`: avatar is talking (when the avatar is replying to the user)
-
-When the chat finishes and you want hologram to revert to IDLE STATE (`wave.mp4`), call:
-
-```ts
-send({ type: "action", action: "idle" });
-```
-
-### If server is remote
-
-You can ignore this section. I added this section as a reminder if our server needs to be remote.
-
-Add `NEXT_PUBLIC_WS_URL` in `.env.local` if server is remote:
-
-```
-NEXT_PUBLIC_WS_URL=ws://your-server-host:8080
-```
-
-## How to set up HTTPS for touchscreen display
-
-1. Install OpenSSL
-2. Generate a self-signed certificate
-
-```
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365
-```
-
-3. Enter a PEM pass phrase (e.g. password)
-4. Fill in the fields
-5. Remove the passphrase
-
-```
-openssl rsa -in key.pem -out key_no_passphrase.pem
-```
-
-6. Run the application
-
-```
-node server.js
-```
-
-## Icons
-
-You can try to find the icons that you need in the lucide-react library.
-
-https://lucide.dev/icons/
-
-## Viewing Instructions
-
-To view how the app will look like in your browser with the dimensions of an iPad Mini
-
-1. Go to Developer Tools
-2. Select iPad Mini under Dimensions
-3. Rotate the screen such that it becomes landscape
-
-## RFID
-> [!NOTE]
-> RFID Reader is currently set in USB Mode
-
-# HID Mode
-Setup
-
-```bash
-cd rfid
-sudo apt update
-sudo apt install python3-evdev
-python3 -m venv .venv --system-site-packages
-source .venv/bin/activate
-pip install -r requirements.txt
-sudo .venv/bin/python rfidv1.py
-```
-
-To find the RFID device info:
-
-```bash
-cat /proc/bus/input/devices
-```
-
-Should look something like this
-
-```bash
-I: Bus=0003 Vendor=ffff Product=0035 Version=0110
-N: Name="ARM CM0 USB HID Keyboard"
-P: Phys=usb-xhci-hcd.0-2/input0
-S: Sysfs=/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-2/1-2:1.0/0003:FFFF:0035.0001/input/input1
-...
-```
-
-Running Docker File
-
-```bash
-docker build -t rfidimage .
-docker run --rm \
-    -p 5000:5000 \
-    --device /dev/input/event1:/dev/input/event1 \
-    rfidimage
-```
-
-## Clearing Space in Rpi
-
-```bash
-docker compose up --build #build the docker image
-docker builder prune --filter "until=2h" #removes previous docker images
-```
+## 🔗 Documentation
+- Detailed setup, environment variables per folder, and operational steps: `instructions.md`
+- Vector data lives in `data/` and `.chroma/ah` (collection `alexandra_hospital`).
